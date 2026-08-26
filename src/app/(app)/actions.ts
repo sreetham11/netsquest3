@@ -3,11 +3,25 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { pointsForSpendCents } from "@/lib/rewards";
+import { recordNetsPayment } from "@/lib/rewards";
 import { startOfThisMonth } from "@/lib/data/queries";
 
 // All of these are SIMULATED money movements — they only write rows to Postgres
 // via Prisma. No real payment processing.
+
+// Thrown inside a prisma.$transaction to roll the whole thing back while
+// carrying a user-facing reason out to the caller. Every throw site below is a
+// guard that only trips on a race, so the message is the useful part.
+class ActionAbort extends Error {}
+
+// Turns a rolled-back transaction into the {ok, error} shape the forms already
+// render. An ActionAbort message is deliberate and safe to show; anything else
+// is a real fault — log it rather than swallowing it, and show a generic line.
+function failed(err: unknown, context: string): { ok: false; error: string } {
+  if (err instanceof ActionAbort) return { ok: false, error: err.message };
+  console.error(`${context} failed`, err);
+  return { ok: false, error: "Something went wrong. Try again." };
+}
 
 export async function topUp(formData: FormData) {
   const user = await requireUser();
@@ -120,84 +134,135 @@ export async function payBill(_prev: PayBillState, formData: FormData): Promise<
   ]);
   if (!bill || !account) return { ok: false, error: "Something went wrong. Try again." };
 
-  // Same "already covered this cycle" rule the Bills page uses to hide the
-  // Pay button (getSpendingPlan uses it too) — enforced server-side so a
-  // double-click or a slow-network double-submit can't charge the bill twice.
-  if (bill.lastPaidAt && bill.lastPaidAt >= startOfThisMonth()) {
+  const monthStart = startOfThisMonth();
+
+  // Read-time checks, so the two expected failures get a specific message.
+  // They are NOT what makes this safe — the conditional write below is.
+  if (bill.lastPaidAt && bill.lastPaidAt >= monthStart) {
     return { ok: false, error: "This bill is already paid for this month." };
   }
-
   if (account.balanceCents < bill.amountCents) {
     return { ok: false, error: "Insufficient balance to pay this bill." };
   }
 
-  await prisma.$transaction([
-    prisma.account.update({
-      where: { userId: user.id },
-      data: {
-        balanceCents: { decrement: bill.amountCents },
-        rewardPoints: { increment: pointsForSpendCents(bill.amountCents) },
-      },
-    }),
-    prisma.transaction.create({
-      data: {
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Claim the cycle FIRST, conditionally — the same "already covered this
+      // cycle" rule as above, but re-checked inside the transaction where the
+      // row is locked. Two rapid submissions both pass the read above; only one
+      // gets count 1 here, and the loser rolls back before any money moves or
+      // points are credited. Without this the bill is charged twice AND the
+      // points are awarded twice, and nothing re-derives rewardPoints from the
+      // ledger later, so the extra points would be permanent.
+      const claimed = await tx.recurringBill.updateMany({
+        where: {
+          id: bill.id,
+          userId: user.id,
+          OR: [{ lastPaidAt: null }, { lastPaidAt: { lt: monthStart } }],
+        },
+        data: { lastPaidAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw new ActionAbort("This bill is already paid for this month.");
+      }
+
+      // Debit + ledger row + points, together. See recordNetsPayment.
+      await recordNetsPayment(tx, {
         userId: user.id,
         description: bill.name,
         category: bill.category,
-        amountCents: -bill.amountCents,
+        amountCents: bill.amountCents,
         type: "BILL",
-      },
-    }),
-    prisma.recurringBill.update({
-      where: { id: bill.id },
-      data: { lastPaidAt: new Date() },
-    }),
-  ]);
+      });
+    });
+  } catch (err) {
+    return failed(err, "payBill");
+  }
 
   revalidatePath("/bills");
   revalidatePath("/home");
+  // Points and the ledger row both changed — /rewards reads the balance, the
+  // tier count and the earn history; /transactions lists the new row.
   revalidatePath("/rewards");
+  revalidatePath("/transactions");
   return { ok: true };
 }
 
-export async function redeemReward(formData: FormData) {
+// Shaped as (prevState, formData) => State (same pattern as payBill) so the
+// Redeem button can show why a redemption failed. It used to return silently
+// on insufficient points, which looked like a dead button.
+export type RedeemRewardState = { ok: boolean; error?: string } | null;
+
+export async function redeemReward(
+  _prev: RedeemRewardState,
+  formData: FormData,
+): Promise<RedeemRewardState> {
   const user = await requireUser();
   const rewardId = String(formData.get("rewardId") ?? "");
-  if (!rewardId) return;
+  if (!rewardId) return { ok: false, error: "Something went wrong. Try again." };
 
   const [account, reward] = await Promise.all([
     prisma.account.findUnique({ where: { userId: user.id } }),
     prisma.reward.findUnique({ where: { id: rewardId } }),
   ]);
-  if (!account || !reward) return;
-  if (account.rewardPoints < reward.pointCost) return;
+  if (!account) return { ok: false, error: "Something went wrong. Try again." };
+  if (!reward) return { ok: false, error: "That reward is no longer available." };
 
-  await prisma.$transaction([
-    prisma.account.update({
-      where: { userId: user.id },
-      data: { rewardPoints: { decrement: reward.pointCost } },
-    }),
-    prisma.redemption.create({
-      data: {
-        userId: user.id,
-        rewardId: reward.id,
-        pointsSpent: reward.pointCost,
-      },
-    }),
-    prisma.transaction.create({
-      data: {
-        userId: user.id,
-        description: `Redeemed: ${reward.name}`,
-        category: "Rewards",
-        amountCents: 0,
-        type: "REWARD",
-      },
-    }),
-  ]);
+  // Read-time check for the message that actually helps — name the shortfall
+  // rather than just refusing. The conditional decrement below is the guard.
+  if (account.rewardPoints < reward.pointCost) {
+    return {
+      ok: false,
+      error: `Not enough points — ${reward.name} costs ${reward.pointCost.toLocaleString()} pts and you have ${account.rewardPoints.toLocaleString()}.`,
+    };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Conditional decrement: `rewardPoints >= pointCost` lives in the WHERE,
+      // so Postgres re-evaluates it against the committed row after locking it.
+      // Two submissions racing off the same stale balance can't both win, which
+      // is what keeps rewardPoints from ever going negative — a plain
+      // read-then-decrement would let the second one underflow.
+      const debited = await tx.account.updateMany({
+        where: { userId: user.id, rewardPoints: { gte: reward.pointCost } },
+        data: { rewardPoints: { decrement: reward.pointCost } },
+      });
+      if (debited.count === 0) {
+        throw new ActionAbort(
+          "Your point balance just changed — refresh and try redeeming again.",
+        );
+      }
+
+      await tx.redemption.create({
+        data: {
+          userId: user.id,
+          rewardId: reward.id,
+          pointsSpent: reward.pointCost,
+        },
+      });
+
+      // $0 ledger row so a redemption is visible in Transactions too; txnValue()
+      // renders REWARD rows as "Redeemed" instead of a "+$0.00" that would read
+      // like a bug in a money ledger (src/lib/txn.ts).
+      await tx.transaction.create({
+        data: {
+          userId: user.id,
+          description: `Redeemed: ${reward.name}`,
+          category: "Rewards",
+          amountCents: 0,
+          type: "REWARD",
+        },
+      });
+    });
+  } catch (err) {
+    return failed(err, "redeemReward");
+  }
 
   revalidatePath("/rewards");
   revalidatePath("/home");
   revalidatePath("/transactions");
+  return { ok: true };
 }
 
 // One action for both "add a new category cap" and "edit an existing one" —

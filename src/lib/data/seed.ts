@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { NETS_PAYMENT_TYPES, pointsForSpendCents } from "@/lib/rewards";
+import { isNetsPaymentType, pointsForSpendCents, type NetsPaymentType } from "@/lib/rewards";
 
 function daysAgo(n: number): Date {
   const d = new Date();
@@ -63,7 +63,7 @@ export async function ensureUserData(userId: string, email: string) {
     description: string;
     category: string;
     amountCents: number;
-    type: (typeof NETS_PAYMENT_TYPES)[number] | "INCOME";
+    type: NetsPaymentType | "INCOME";
     country?: string;
     currencyLocal?: string;
     amountLocalCents?: number;
@@ -83,23 +83,29 @@ export async function ensureUserData(userId: string, email: string) {
 
   // Same formula the live actions use (src/lib/rewards.ts) — every NETS
   // payment in the seed earns points, so a fresh demo account already shows
-  // real progress instead of a placeholder number.
+  // real progress instead of a placeholder number. INCOME is skipped here for
+  // the same reason it earns nothing at runtime: it's money coming in.
   const rewardPoints = transactions
-    .filter((t) => (NETS_PAYMENT_TYPES as readonly string[]).includes(t.type))
+    .filter((t) => isNetsPaymentType(t.type))
     .reduce((sum, t) => sum + pointsForSpendCents(t.amountCents), 0);
 
-  await prisma.account.create({
-    data: {
-      userId,
-      balanceCents: 124_000,
-      currency: "SGD",
-      rewardPoints,
-    },
-  });
-
-  await prisma.transaction.createMany({
-    data: transactions.map((t) => ({ ...t, userId })),
-  });
+  // Opening balance and the rows those points were computed from go in one
+  // transaction — the same invariant recordNetsPayment enforces at runtime. If
+  // the ledger write failed on its own, the account would open with points that
+  // no transaction explains, and nothing recomputes the balance afterwards.
+  await prisma.$transaction([
+    prisma.account.create({
+      data: {
+        userId,
+        balanceCents: 124_000,
+        currency: "SGD",
+        rewardPoints,
+      },
+    }),
+    prisma.transaction.createMany({
+      data: transactions.map((t) => ({ ...t, userId })),
+    }),
+  ]);
 
   // Instant bill splits — name-only participants, no invites/real accounts.
   await prisma.split.create({

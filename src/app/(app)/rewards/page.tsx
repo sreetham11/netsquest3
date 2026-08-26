@@ -2,13 +2,15 @@ import { requireUser } from "@/lib/auth";
 import { getRewards, getMerchantDeals } from "@/lib/data/queries";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Button, ButtonLink } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/Button";
 import { ListRow } from "@/components/ui/ListRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/Icon";
 import { formatDayMonth, formatTime } from "@/lib/format";
-import { redeemReward } from "../actions";
+import { categoryIcon } from "@/lib/categoryIcon";
+import { POINTS_PER_DOLLAR, resolveTierProgress } from "@/lib/rewards";
+import { RedeemButton } from "./RedeemButton";
 
 const REWARD_ICON: Record<string, IconName> = {
   coffee: "coffee",
@@ -77,15 +79,20 @@ export default async function RewardsPage({
 }
 
 async function PointsTab({ userId }: { userId: string }) {
-  const { points, tiers, catalogue, monthlyPaymentCount, recentRedemptions } =
+  // Every number below is derived from this one freshly-fetched read. The page
+  // is dynamic (requireUser reads cookies), and every action that moves points
+  // revalidates /rewards, so the balance, the tier and the distance-to-next
+  // reward can't disagree with each other or lag a redemption.
+  const { points, tiers, catalogue, monthlyPaymentCount, recentRedemptions, recentPointEvents } =
     await getRewards(userId);
 
-  const currentTier = [...tiers].reverse().find((t) => monthlyPaymentCount >= t.txnCountNeeded);
-  const nextTier = tiers.find((t) => t.txnCountNeeded > monthlyPaymentCount);
-  const tierProgress = nextTier
-    ? (monthlyPaymentCount - (currentTier?.txnCountNeeded ?? 0)) /
-      (nextTier.txnCountNeeded - (currentTier?.txnCountNeeded ?? 0))
-    : 1;
+  const {
+    ordered: orderedTiers,
+    current: currentTier,
+    next: nextTier,
+    progress: tierProgress,
+    atTopTier,
+  } = resolveTierProgress(tiers, monthlyPaymentCount);
 
   // Always show exact distance to the next reward, not an abstract balance —
   // pick the cheapest catalogue item the user hasn't reached yet.
@@ -118,7 +125,11 @@ async function PointsTab({ userId }: { userId: string }) {
           <p className="text-sm text-ink-muted">Your tier</p>
           <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-nets-blue-100 px-3 py-1 text-sm font-medium text-accent">
             <Icon name="rewards" size={14} />
-            {currentTier?.name ?? "Bronze"}
+            {/* With tiers seeded, a zero-payment user still resolves to the
+                entry tier (threshold 0). The fallback only shows when no tier
+                is reachable at all — better honest than a hardcoded "Bronze"
+                the account hasn't actually earned. */}
+            {currentTier?.name ?? "No tier yet"}
           </div>
 
           {nextTier ? (
@@ -129,12 +140,47 @@ async function PointsTab({ userId }: { userId: string }) {
                 {nextTier.txnCountNeeded - monthlyPaymentCount} more to {nextTier.name}
               </p>
             </div>
-          ) : (
+          ) : atTopTier ? (
             <p className="mt-5 text-sm text-ink-muted">
               Top tier unlocked — enjoy the perks below.
             </p>
+          ) : (
+            // No tiers configured at all. Without this branch an empty tier list
+            // falls through to "Top tier unlocked", which is the opposite of true.
+            <p className="mt-5 text-sm text-ink-muted">
+              Tiers aren&apos;t set up on this account yet.
+            </p>
           )}
         </Card>
+      </div>
+
+      {/* Principle 1, visible progress: show WHICH payments earned the points,
+          not just the total. Rendered straight off the Transaction rows — no
+          separate points ledger to fall out of sync. */}
+      <div className="mt-8">
+        <h2 className="mb-3 text-lg font-semibold text-ink">Recent points earned</h2>
+        {recentPointEvents.length === 0 ? (
+          <EmptyState
+            icon={<Icon name="rewards" size={22} />}
+            title="No points earned yet"
+            description={`Pay with NETS and you'll earn ${POINTS_PER_DOLLAR} points for every S$1 — automatically.`}
+          />
+        ) : (
+          <Card padded={false}>
+            <div className="divide-y divide-line px-6">
+              {recentPointEvents.map((event) => (
+                <ListRow
+                  key={event.id}
+                  leading={<Icon name={categoryIcon(event.category)} size={18} />}
+                  title={event.description}
+                  subtitle={`${formatDayMonth(event.createdAt)} · ${formatTime(event.createdAt)}`}
+                  value={`+${event.points.toLocaleString()} pts`}
+                  valueTone="positive"
+                />
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Tiers reward how OFTEN you choose NETS, not how much you spend. */}
@@ -142,7 +188,7 @@ async function PointsTab({ userId }: { userId: string }) {
         <h2 className="mb-3 text-lg font-semibold text-ink">All tiers</h2>
         <Card padded={false}>
           <div className="divide-y divide-line px-6">
-            {tiers.map((tier) => {
+            {orderedTiers.map((tier) => {
               const unlocked = monthlyPaymentCount >= tier.txnCountNeeded;
               return (
                 <ListRow
@@ -183,12 +229,7 @@ async function PointsTab({ userId }: { userId: string }) {
                       {reward.pointCost.toLocaleString()} pts
                     </p>
                   </div>
-                  <form action={redeemReward} className="w-full">
-                    <input type="hidden" name="rewardId" value={reward.id} />
-                    <Button type="submit" disabled={!affordable} className="w-full">
-                      Redeem
-                    </Button>
-                  </form>
+                  <RedeemButton rewardId={reward.id} affordable={affordable} />
                 </Card>
               );
             })}

@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { NETS_PAYMENT_TYPES } from "@/lib/rewards";
+import { NETS_PAYMENT_TYPES, pointsForSpendCents } from "@/lib/rewards";
 
 export function startOfThisMonth(): Date {
   const now = new Date();
@@ -50,37 +50,57 @@ export async function getSplits(userId: string) {
 }
 
 // Everything the Rewards page needs: point balance, tiers (keyed to monthly
-// NETS-payment count), the redemption catalogue, and recent redemption
-// history (so a reload still shows the confirmation — it's a real DB row,
-// not client state).
+// NETS-payment count), the redemption catalogue, recent redemption history (so
+// a reload still shows the confirmation — it's a real DB row, not client
+// state), and the recent point-earning events behind the balance.
 export async function getRewards(userId: string) {
-  const [account, tiers, catalogue, monthlyPaymentCount, recentRedemptions] = await Promise.all([
-    prisma.account.findUnique({ where: { userId } }),
-    prisma.rewardTier.findMany({
-      where: { userId },
-      orderBy: { sortOrder: "asc" },
-    }),
-    prisma.reward.findMany({ orderBy: { pointCost: "asc" } }),
-    prisma.transaction.count({
-      where: {
-        userId,
-        type: { in: [...NETS_PAYMENT_TYPES] },
-        createdAt: { gte: startOfThisMonth() },
-      },
-    }),
-    prisma.redemption.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: { reward: true },
-    }),
-  ]);
+  const [account, tiers, catalogue, monthlyPaymentCount, recentRedemptions, earningTxns] =
+    await Promise.all([
+      prisma.account.findUnique({ where: { userId } }),
+      prisma.rewardTier.findMany({
+        where: { userId },
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.reward.findMany({ orderBy: { pointCost: "asc" } }),
+      // Tier progress is a COUNT of this calendar month's NETS payments, never
+      // a sum of spend — see the RewardTier comment in prisma/schema.prisma.
+      // Recomputed here on every load, so it resets on its own when the month
+      // rolls over and reads 0 (= entry tier) for a user who hasn't paid yet.
+      prisma.transaction.count({
+        where: {
+          userId,
+          type: { in: [...NETS_PAYMENT_TYPES] },
+          createdAt: { gte: startOfThisMonth() },
+        },
+      }),
+      prisma.redemption.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: { reward: true },
+      }),
+      // Earn history comes from the Transaction rows themselves — points are a
+      // pure function of the spend (pointsForSpendCents), so a separate ledger
+      // table could only ever drift away from what actually happened.
+      prisma.transaction.findMany({
+        where: { userId, type: { in: [...NETS_PAYMENT_TYPES] } },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+    ]);
   return {
     points: account?.rewardPoints ?? 0,
     tiers,
     catalogue,
     monthlyPaymentCount,
     recentRedemptions,
+    recentPointEvents: earningTxns.map((t) => ({
+      id: t.id,
+      description: t.description,
+      category: t.category,
+      createdAt: t.createdAt,
+      points: pointsForSpendCents(t.amountCents),
+    })),
   };
 }
 
