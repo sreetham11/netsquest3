@@ -1,26 +1,130 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================================
+   NETS Quest — Design Tokens  (Phase 0, single source of truth)
+   ----------------------------------------------------------------------------
+   Every color / font-size / radius in the app MUST reference these by NAME.
+   - No raw hex codes in component code.
+   - No default Tailwind color names (blue-500, zinc-50, red-600, …): the
+     default palettes are reset to `initial` below, so those utility classes
+     do not compile at all. A component that invents a style renders unstyled
+     and is caught on sight.
+   - If a component needs something not defined here, STOP and ask — do not add
+     a new hue/size/radius unilaterally.
+   ============================================================================ */
+
+@theme {
+  /* --- Reset Tailwind defaults so ONLY locked tokens are usable ------------ */
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+
+  /* --- Essentials --------------------------------------------------------- */
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* --- Brand: NETS blue --------------------------------------------------- */
+  --color-nets-blue-900: #042c53; /* hero/card backgrounds, primary dark surfaces */
+  --color-nets-blue-700: #0c447c; /* accents, active nav states, links           */
+  --color-nets-blue-100: #e4edf5; /* light backgrounds, subtle highlights        */
+
+  /* --- Brand: NETS red  (warnings / alerts / negative amounts ONLY) -------- */
+  /* FINAL RULE: red is NEVER a button/CTA color. Blue is the only interactive/
+     CTA color. Red only signals warnings, alerts, and negative amounts.        */
+  --color-nets-red-900: #791f1f; /* negative amounts, strong warnings           */
+  --color-nets-red-700: #a32d2d; /* alert emphasis, sparingly — not a CTA        */
+
+  /* --- Neutral gray scale (text, borders, backgrounds) -------------------- */
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #404040;
+  --color-neutral-800: #262626;
+  --color-neutral-900: #171717;
+
+  /* --- Typography: one family, six locked steps (px size / line-height) --- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 18px;
+  --text-lg--line-height: 28px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+
+  /* --- Radius: exactly two semantic values (+ full for circles) ----------- */
+  --radius-card: 12px; /* every card, identically      */
+  --radius-button: 8px; /* every button / pill, identically */
+  --radius-full: 9999px; /* avatars / circular only       */
+  --radius-wallet: 16px; /* Home wallet-card stack ONLY — explicit, requested exception */
+
+  /* ==========================================================================
+     SEMANTIC TOKENS — encode the NETS usage philosophy.
+     Per NETS' digital style guide the UI is GREY-DOMINANT: neutral surfaces
+     everywhere, "Evening Blue" used SPARINGLY as an accent (buttons, active
+     nav, links, progress bars, headlines) — never as large background fills.
+     Red is rarer still: negative amounts / alerts only.
+
+     USAGE CONTRACT (prefer these semantic names in components):
+       Surfaces / backgrounds  -> neutral, the default everywhere
+         bg-canvas          page/app background            (neutral-50)
+         bg-surface         cards, panels                  (white)
+         bg-surface-muted   secondary/nested surfaces      (neutral-100)
+         border-line        card borders, hairlines        (neutral-200)
+         text-ink           body text                      (neutral-900)
+         text-ink-muted     secondary text                 (neutral-600)
+
+       Accent (blue) — the ONLY interactive / CTA color. Small areas:
+         text-accent / bg-accent          buttons, CTAs, links, active nav,
+                                          progress bars, headlines (blue-700)
+         bg-accent-strong                 pressed/hover accent     (blue-900)
+         bg-hero                          THE ONE sanctioned blue fill:
+                                          Home balance-card hero   (blue-900)
+
+       Alert (red) — warnings / alerts / negative amounts ONLY. NEVER a
+       button or CTA (that is always blue):
+         text-danger / bg-danger          alert emphasis, sparingly (red-700)
+         text-danger-strong               negative amounts, warnings (red-900)
+
+     Do NOT paint whole cards/heroes blue. bg-hero is a single deliberate
+     exception for the Home balance card, nothing else.
+     ========================================================================== */
+  --color-canvas: var(--color-neutral-50);
+  --color-surface: var(--color-white);
+  --color-surface-muted: var(--color-neutral-100);
+  --color-line: var(--color-neutral-200);
+  --color-ink: var(--color-neutral-900);
+  --color-ink-muted: var(--color-neutral-600);
+
+  --color-accent: var(--color-nets-blue-700);
+  --color-accent-strong: var(--color-nets-blue-900);
+  --color-hero: var(--color-nets-blue-900);
+
+  --color-danger: var(--color-nets-red-700);
+  --color-danger-strong: var(--color-nets-red-900);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ----------------------------------------------------------------------------
+   Spacing scale is Tailwind's default 4px base, so the locked steps map to:
+     1 = 4px   2 = 8px   3 = 12px   4 = 16px   6 = 24px   8 = 32px
+   Use ONLY these named steps (p-1 p-2 p-3 p-4 p-6 p-8, gap-*, m-*, etc.).
+   ---------------------------------------------------------------------------- */
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
 }

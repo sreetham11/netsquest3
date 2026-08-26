@@ -1,0 +1,154 @@
+// NETS Quest data model. All money is stored as integer cents.
+// Every user-scoped model carries `userId` = the Supabase auth user id (uuid
+// string). Auth users live in Supabase's managed `auth` schema, so userId is a
+// plain indexed string here, not a Prisma relation.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// One simulated wallet per user.
+model Account {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  balanceCents Int      @default(0)
+  currency     String   @default("SGD")
+  rewardPoints Int      @default(0) // 5 pts per S$1 of NETS payment, see src/lib/rewards.ts
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Simulated money movement. amountCents < 0 = debit/spend, > 0 = credit.
+model Transaction {
+  id               String   @id @default(cuid())
+  userId           String
+  description      String
+  category         String
+  amountCents      Int
+  type             TxnType  @default(PAYMENT)
+  // Overseas fields (set when the spend happened abroad).
+  country          String?
+  currencyLocal    String?
+  amountLocalCents Int?
+  createdAt        DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum TxnType {
+  PAYMENT
+  TOPUP
+  TRANSFER
+  VAULT
+  BILL
+  REWARD
+  INCOME
+}
+
+// Instant bill/receipt split among named participants — no invites, no real
+// linked accounts, participants are names only. "paid" is a status toggle
+// only (no real payment processing, no balance/points effect).
+model Split {
+  id               String             @id @default(cuid())
+  ownerId          String
+  title            String
+  totalAmountCents Int
+  category         String             @default("General")
+  createdAt        DateTime           @default(now())
+  participants     SplitParticipant[]
+
+  @@index([ownerId])
+}
+
+model SplitParticipant {
+  id               String  @id @default(cuid())
+  splitId          String
+  name             String
+  shareAmountCents Int
+  paid             Boolean @default(false)
+  split            Split   @relation(fields: [splitId], references: [id], onDelete: Cascade)
+
+  @@index([splitId])
+}
+
+// Per-user reward tiers, keyed to monthly NETS-payment COUNT (not spend $).
+// Deliberate: tiers reward payment-method consistency ("choose NETS often"),
+// not purchase volume — spending more shouldn't be what levels you up.
+// Current point balance lives on Account.rewardPoints.
+model RewardTier {
+  id             String @id @default(cuid())
+  userId         String
+  name           String
+  perk           String
+  txnCountNeeded Int
+  sortOrder      Int    @default(0)
+
+  @@index([userId])
+}
+
+// Fixed demo catalogue of redeemable rewards — global, not per-user. Tangible
+// items (coffee, a movie ticket) read as more motivating than an equivalent
+// cashback %, even at the same underlying value.
+model Reward {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  pointCost   Int
+  category    String // maps to an Icon in the UI: coffee, bubble-tea, fast-food, movie-ticket, voucher
+  sortOrder   Int          @default(0)
+  redemptions Redemption[]
+}
+
+// Merchant cashback marketplace — fixed demo catalogue, global not per-user.
+// Same shape as Reward (name, category, offer, sortOrder) for consistency.
+// Static/seeded for the demo; not a live merchant API.
+model MerchantDeal {
+  id        String @id @default(cuid())
+  merchant  String @unique
+  category  String // maps to an Icon in the UI: food, grocery, convenience, cafe, ride, pharmacy, cinema
+  offer     String // e.g. "10% off", "Free delivery", "5% cashback"
+  sortOrder Int    @default(0)
+}
+
+// A user's redemption history. Persisted (not just an in-memory point
+// deduction) so a reload still shows the reward as redeemed.
+model Redemption {
+  id          String   @id @default(cuid())
+  userId      String
+  rewardId    String
+  pointsSpent Int
+  createdAt   DateTime @default(now())
+  reward      Reward   @relation(fields: [rewardId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+// Per-user, per-category monthly spending cap.
+model BudgetCap {
+  id         String   @id @default(cuid())
+  userId     String
+  category   String
+  limitCents Int
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, category])
+}
+
+// Recurring bill the user can pay (simulated).
+model RecurringBill {
+  id            String    @id @default(cuid())
+  userId        String
+  name          String
+  category      String
+  amountCents   Int
+  dueDayOfMonth Int
+  autopay       Boolean   @default(false)
+  lastPaidAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([userId])
+}
