@@ -1,16 +1,18 @@
 import Link from "next/link";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-// CTA button. Blue is the ONLY interactive/CTA color, so there is deliberately
-// no red/danger variant here.
+// CTA button. Primary blue is the ONLY interactive/CTA color — red (secondary)
+// is reserved for the logo and alerts, never a button, per DESIGN.md.
 type Variant = "primary" | "secondary";
 
+// min-h-12 (48px) satisfies DESIGN.md's "Touch Targets: minimum height of
+// 48px" regardless of content/padding.
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-button px-4 py-2 text-sm font-medium transition-colors disabled:opacity-60";
+  "inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-6 text-body-lg font-semibold transition-colors disabled:opacity-60";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-accent text-white hover:bg-accent-strong",
-  secondary: "border border-line bg-surface text-ink hover:bg-surface-muted",
+  primary: "bg-primary text-on-primary hover:bg-nets-blue-gradient-start",
+  secondary: "border border-primary bg-transparent text-primary hover:bg-primary/5",
 };
 
 export function Button({

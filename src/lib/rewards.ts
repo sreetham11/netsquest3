@@ -1,5 +1,9 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
+// Re-exported so existing server-side imports of these from "@/lib/rewards"
+// keep working unchanged — see netsPaymentTypes.ts for why they moved.
+import { NETS_PAYMENT_TYPES, isNetsPaymentType, type NetsPaymentType } from "@/lib/netsPaymentTypes";
+export { NETS_PAYMENT_TYPES, isNetsPaymentType, type NetsPaymentType };
 
 // NETS Quest rewards philosophy — this is the actual design pitch, not just a
 // mechanic: build a payment-method HABIT, not higher spend.
@@ -14,17 +18,6 @@ import type { PrismaClient } from "@/generated/prisma/client";
 //                            because the goal is payment-method preference.
 
 export const POINTS_PER_DOLLAR = 5;
-
-// Transaction types that count as "paying with NETS" — they earn points AND
-// count toward the monthly tier transaction count. TOPUP/INCOME are money
-// coming in, not a NETS payment, so they earn nothing.
-export const NETS_PAYMENT_TYPES = ["PAYMENT", "BILL", "VAULT"] as const;
-
-export type NetsPaymentType = (typeof NETS_PAYMENT_TYPES)[number];
-
-export function isNetsPaymentType(type: string): type is NetsPaymentType {
-  return (NETS_PAYMENT_TYPES as readonly string[]).includes(type);
-}
 
 // Points earned on a spend transaction: S$1 = 5 points, auto-credited with no
 // separate activation step.
@@ -51,6 +44,10 @@ type NetsPaymentClient = Pick<PrismaClient, "account" | "transaction">;
 // ledger afterwards — so it's worth making unrepresentable rather than
 // re-checked. Callers MUST pass a $transaction client so a partial write
 // (money moved, points not credited) can't survive a crash.
+//
+// Returns the ledger row's id alongside the points earned — payBill ignores
+// it (discards the return value entirely, so this is non-breaking for it);
+// makePayment needs it to send the user to /pay/success/[id].
 export async function recordNetsPayment(
   client: NetsPaymentClient,
   payment: {
@@ -60,7 +57,7 @@ export async function recordNetsPayment(
     amountCents: number; // positive cents to charge; the debit sign is applied here
     type: NetsPaymentType;
   },
-): Promise<number> {
+): Promise<{ transactionId: string; points: number }> {
   const points = pointsForSpendCents(payment.amountCents);
 
   await client.account.update({
@@ -71,7 +68,7 @@ export async function recordNetsPayment(
     },
   });
 
-  await client.transaction.create({
+  const row = await client.transaction.create({
     data: {
       userId: payment.userId,
       description: payment.description,
@@ -81,7 +78,7 @@ export async function recordNetsPayment(
     },
   });
 
-  return points;
+  return { transactionId: row.id, points };
 }
 
 export type TierLike = { name: string; txnCountNeeded: number };

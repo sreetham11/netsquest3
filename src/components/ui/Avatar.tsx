@@ -1,6 +1,6 @@
 // Initials-in-circle avatar. Locked tokens only — cycles blue/neutral fills,
 // no new hues. Used where a person needs a visual anchor (Split participants).
-const TONES = ["bg-accent", "bg-accent-strong", "bg-neutral-700"] as const;
+const TONES = ["bg-primary", "bg-nets-blue-dark", "bg-outline"] as const;
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);

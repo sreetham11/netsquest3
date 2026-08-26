@@ -1,8 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getRewards, getMerchantDeals } from "@/lib/data/queries";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/Card";
 import { ButtonLink } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { ListRow } from "@/components/ui/ListRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -30,16 +29,6 @@ const DEAL_ICON: Record<string, IconName> = {
   cinema: "movie-ticket",
 };
 
-const DEAL_CATEGORY_LABEL: Record<string, string> = {
-  food: "Food court",
-  grocery: "Grocery",
-  convenience: "Convenience store",
-  cafe: "Cafe",
-  ride: "Ride-hailing",
-  pharmacy: "Pharmacy & health",
-  cinema: "Cinema",
-};
-
 export default async function RewardsPage({
   searchParams,
 }: {
@@ -51,10 +40,11 @@ export default async function RewardsPage({
 
   return (
     <div>
-      <PageHeader
-        title="Rewards"
-        subtitle="Pay with NETS, earn points automatically, and redeem something real."
-      />
+      {/* nets_rewards/screen.png's in-content title is primary blue, unlike
+          the shared PageHeader's neutral on-surface title — PageHeader is
+          still used by not-yet-redesigned pages, so this is a one-off
+          heading here rather than a change to that shared component. */}
+      <h1 className="mb-6 text-headline-lg text-primary">Rewards</h1>
 
       <div className="mb-6 flex gap-2">
         <ButtonLink
@@ -93,6 +83,7 @@ async function PointsTab({ userId }: { userId: string }) {
     progress: tierProgress,
     atTopTier,
   } = resolveTierProgress(tiers, monthlyPaymentCount);
+  const currentIndex = currentTier ? orderedTiers.findIndex((t) => t.id === currentTier.id) : -1;
 
   // Always show exact distance to the next reward, not an abstract balance —
   // pick the cheapest catalogue item the user hasn't reached yet.
@@ -101,64 +92,61 @@ async function PointsTab({ userId }: { userId: string }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card>
-          <p className="text-sm text-ink-muted">Your points</p>
-          <p className="mt-1 text-2xl font-semibold text-ink">{points.toLocaleString()}</p>
-
-          {nextReward ? (
-            <div className="mt-5">
-              <ProgressBar value={rewardProgress} />
-              <p className="mt-1.5 text-xs text-ink-muted">
-                {points.toLocaleString()}/{nextReward.pointCost.toLocaleString()} pts —{" "}
-                {(nextReward.pointCost - points).toLocaleString()} more until {nextReward.name}
-              </p>
-            </div>
-          ) : (
-            <p className="mt-5 text-sm text-ink-muted">
-              You have enough points to redeem anything in the catalogue.
+      {/* Status card — combines what nets_rewards/screen.png shows as one
+          card: points balance, current tier pill, and progress to next tier. */}
+      <Card className="relative overflow-hidden border-gold-tier/30">
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <p className="text-body-md text-on-surface-variant">Available Points</p>
+            <p className="mt-1 text-currency-display text-primary">
+              {points.toLocaleString()} <span className="text-body-md font-medium">pts</span>
             </p>
-          )}
-        </Card>
-
-        <Card>
-          <p className="text-sm text-ink-muted">Your tier</p>
-          <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-nets-blue-100 px-3 py-1 text-sm font-medium text-accent">
-            <Icon name="rewards" size={14} />
-            {/* With tiers seeded, a zero-payment user still resolves to the
-                entry tier (threshold 0). The fallback only shows when no tier
-                is reachable at all — better honest than a hardcoded "Bronze"
-                the account hasn't actually earned. */}
-            {currentTier?.name ?? "No tier yet"}
           </div>
-
-          {nextTier ? (
-            <div className="mt-5">
-              <ProgressBar value={tierProgress} />
-              <p className="mt-1.5 text-xs text-ink-muted">
-                {monthlyPaymentCount}/{nextTier.txnCountNeeded} NETS payments this month —{" "}
-                {nextTier.txnCountNeeded - monthlyPaymentCount} more to {nextTier.name}
-              </p>
+          <div className="flex flex-col items-end gap-2">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-container-lowest px-3 py-1.5">
+              <Icon name="rewards" size={16} className="text-gold-tier" />
+              <span className="text-label-md font-semibold text-on-surface">
+                {currentTier?.name ?? "No tier yet"}
+              </span>
             </div>
-          ) : atTopTier ? (
-            <p className="mt-5 text-sm text-ink-muted">
-              Top tier unlocked — enjoy the perks below.
+            {/* Real earn rate, not Stitch's "6 pts / $1 spent" — there is no
+                tier-based point multiplier in this system (POINTS_PER_DOLLAR
+                is flat and tier-independent, see src/lib/rewards.ts). Open
+                question with the user, not resolved here — showing the true
+                rate rather than the unconfirmed screen figure. */}
+            <p className="text-label-md text-on-surface-variant">
+              {POINTS_PER_DOLLAR} pts / $1 spent
             </p>
-          ) : (
-            // No tiers configured at all. Without this branch an empty tier list
-            // falls through to "Top tier unlocked", which is the opposite of true.
-            <p className="mt-5 text-sm text-ink-muted">
-              Tiers aren&apos;t set up on this account yet.
+          </div>
+        </div>
+
+        {nextTier ? (
+          <div className="space-y-3 rounded-lg border border-border-light/50 bg-surface-container-low p-4">
+            <div className="flex justify-between text-label-md">
+              <span className="font-medium text-on-surface">{nextTier.name} Progress</span>
+              <span className="font-semibold text-primary">
+                {monthlyPaymentCount} / {nextTier.txnCountNeeded}
+              </span>
+            </div>
+            <ProgressBar value={tierProgress} />
+            <p className="text-label-md text-on-surface-variant">
+              {nextTier.txnCountNeeded - monthlyPaymentCount} more qualifying payments to unlock
             </p>
-          )}
-        </Card>
-      </div>
+          </div>
+        ) : (
+          <p className="text-body-md text-on-surface-variant">
+            {atTopTier ? "Top tier unlocked — enjoy the perks below." : "Tiers aren't set up on this account yet."}
+          </p>
+        )}
+      </Card>
 
       {/* Principle 1, visible progress: show WHICH payments earned the points,
-          not just the total. Rendered straight off the Transaction rows — no
-          separate points ledger to fall out of sync. */}
+          not just the total. Not part of the Stitch reference — kept from
+          this system's own earn-history requirement, just reskinned. Rendered
+          straight off the Transaction rows, no separate points ledger to
+          fall out of sync. */}
       <div className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Recent points earned</h2>
+        <h2 className="mb-3 text-title-lg text-on-surface">Recent points earned</h2>
         {recentPointEvents.length === 0 ? (
           <EmptyState
             icon={<Icon name="rewards" size={22} />}
@@ -167,7 +155,7 @@ async function PointsTab({ userId }: { userId: string }) {
           />
         ) : (
           <Card padded={false}>
-            <div className="divide-y divide-line px-6">
+            <div className="divide-y divide-border-light px-stack-md">
               {recentPointEvents.map((event) => (
                 <ListRow
                   key={event.id}
@@ -183,31 +171,76 @@ async function PointsTab({ userId }: { userId: string }) {
         )}
       </div>
 
-      {/* Tiers reward how OFTEN you choose NETS, not how much you spend. */}
+      {/* Loyalty Tiers — bento grid per nets_rewards/screen.png. Range labels
+          ("X-Y payments") are derived from the real seeded thresholds, not
+          copied from the screen's example numbers. Tier NAMES also come
+          straight from the DB (seed.ts names the entry tier "Bronze"; the
+          reference screen calls it "Member") — real data wins over the
+          mockup's copy, same principle as the points-rate figure above,
+          though this one's cosmetic rather than a false earn-rate claim. */}
       <div className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold text-ink">All tiers</h2>
-        <Card padded={false}>
-          <div className="divide-y divide-line px-6">
-            {orderedTiers.map((tier) => {
-              const unlocked = monthlyPaymentCount >= tier.txnCountNeeded;
-              return (
-                <ListRow
-                  key={tier.id}
-                  leading={<Icon name="rewards" size={16} />}
-                  title={tier.name}
-                  subtitle={tier.perk}
-                  value={unlocked ? "Unlocked" : `${tier.txnCountNeeded}+ payments/mo`}
-                  valueTone={unlocked ? "positive" : "neutral"}
-                />
-              );
-            })}
-          </div>
-        </Card>
+        <h2 className="mb-3 text-title-lg text-on-surface">Loyalty Tiers</h2>
+        <div className="grid grid-cols-2 gap-3">
+          {orderedTiers.map((tier, i) => {
+            const isCurrent = i === currentIndex;
+            const isFuture = currentIndex !== -1 && i > currentIndex;
+            const upper = orderedTiers[i + 1];
+            const range = upper ? `${tier.txnCountNeeded}-${upper.txnCountNeeded - 1}` : `${tier.txnCountNeeded}+`;
+            return (
+              <div
+                key={tier.id}
+                className={
+                  "relative flex h-28 flex-col justify-between rounded-lg border p-5 " +
+                  (isCurrent
+                    ? "border-2 border-gold-tier bg-gold-tier/5"
+                    : "border-border-light bg-surface-container-lowest") +
+                  (isFuture ? " opacity-60" : "")
+                }
+              >
+                {isCurrent ? (
+                  <Icon name="check-circle" size={20} className="absolute right-3 top-3 text-gold-tier" />
+                ) : null}
+                <p
+                  className={
+                    "text-body-lg font-semibold " + (isCurrent ? "text-gold-tier" : "text-on-surface")
+                  }
+                >
+                  {tier.name}
+                </p>
+                <p className="text-label-md text-on-surface-variant">{range} payments</p>
+              </div>
+            );
+          })}
+        </div>
       </div>
+
+      {/* Next Reward — same nextReward/rewardProgress this tab already
+          computed, restyled to the icon-box + progress-bar row Stitch uses. */}
+      {nextReward ? (
+        <div className="mt-8">
+          <Card className="flex items-center gap-4">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-border-light bg-surface-container-low text-primary">
+              <Icon name={REWARD_ICON[nextReward.category] ?? "rewards"} size={26} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-label-md uppercase tracking-wider text-on-surface-variant">
+                Next Reward
+              </p>
+              <p className="text-title-lg text-on-surface">{nextReward.name}</p>
+              <div className="mt-2">
+                <ProgressBar value={rewardProgress} size="lg" />
+                <p className="mt-1 text-right text-label-md text-on-surface-variant">
+                  {points.toLocaleString()} / {nextReward.pointCost.toLocaleString()} pts
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      ) : null}
 
       {/* Tangible rewards read as more motivating than an equivalent cashback %. */}
       <div className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Redeem your points</h2>
+        <h2 className="mb-3 text-title-lg text-on-surface">Redeem Rewards</h2>
         {catalogue.length === 0 ? (
           <EmptyState
             icon={<Icon name="rewards" size={22} />}
@@ -215,21 +248,26 @@ async function PointsTab({ userId }: { userId: string }) {
             description="Check back soon for redeemable rewards."
           />
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div className="flex flex-col gap-3">
             {catalogue.map((reward) => {
               const affordable = points >= reward.pointCost;
               return (
-                <Card key={reward.id} className="flex flex-col items-center gap-3 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-muted text-ink-muted">
-                    <Icon name={REWARD_ICON[reward.category] ?? "rewards"} size={22} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-ink">{reward.name}</p>
-                    <p className="mt-0.5 text-sm text-ink-muted">
+                <Card
+                  key={reward.id}
+                  className={"flex items-center gap-4" + (affordable ? "" : " opacity-70")}
+                >
+                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-border-light bg-surface-container-low text-primary">
+                    <Icon name={REWARD_ICON[reward.category] ?? "rewards"} size={26} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-body-lg font-semibold text-on-surface">{reward.name}</p>
+                    <p className="mt-0.5 text-body-md font-medium text-primary">
                       {reward.pointCost.toLocaleString()} pts
                     </p>
                   </div>
-                  <RedeemButton rewardId={reward.id} affordable={affordable} />
+                  <div className="w-32 shrink-0">
+                    <RedeemButton rewardId={reward.id} affordable={affordable} />
+                  </div>
                 </Card>
               );
             })}
@@ -239,7 +277,7 @@ async function PointsTab({ userId }: { userId: string }) {
 
       {/* Persisted confirmation — a real DB row, so it survives a reload. */}
       <div className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold text-ink">Recently redeemed</h2>
+        <h2 className="mb-3 text-title-lg text-on-surface">Recently redeemed</h2>
         {recentRedemptions.length === 0 ? (
           <EmptyState
             icon={<Icon name="rewards" size={22} />}
@@ -248,7 +286,7 @@ async function PointsTab({ userId }: { userId: string }) {
           />
         ) : (
           <Card padded={false}>
-            <div className="divide-y divide-line px-6">
+            <div className="divide-y divide-border-light px-stack-md">
               {recentRedemptions.map((r) => (
                 <ListRow
                   key={r.id}
@@ -272,7 +310,12 @@ async function MarketplaceTab() {
 
   return (
     <div>
-      <p className="mb-4 text-sm text-ink-muted">
+      {/* Matches nets_rewards/screen.png's "Merchant Boosts" section — the
+          closest analog to a merchant marketplace in that reference. Same
+          getMerchantDeals() data as before, just restyled to that section's
+          row treatment (icon box + name + offer chip + chevron) instead of
+          the old ListRow-with-value layout. */}
+      <p className="mb-4 text-body-md text-on-surface-variant">
         Exclusive discounts from partner merchants — pay with NETS to enjoy them.
       </p>
       {deals.length === 0 ? (
@@ -282,20 +325,24 @@ async function MarketplaceTab() {
           description="Check back soon for merchant offers."
         />
       ) : (
-        <Card padded={false}>
-          <div className="divide-y divide-line px-6">
-            {deals.map((deal) => (
-              <ListRow
-                key={deal.id}
-                leading={<Icon name={DEAL_ICON[deal.category] ?? "rewards"} size={18} />}
-                title={deal.merchant}
-                subtitle={DEAL_CATEGORY_LABEL[deal.category] ?? deal.category}
-                value={deal.offer}
-                valueTone="positive"
-              />
-            ))}
-          </div>
-        </Card>
+        <div className="flex flex-col gap-3">
+          {deals.map((deal) => (
+            <Card key={deal.id} className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border-light text-primary">
+                  <Icon name={DEAL_ICON[deal.category] ?? "storefront"} size={20} />
+                </span>
+                <div>
+                  <p className="text-body-lg font-semibold text-on-surface">{deal.merchant}</p>
+                  <span className="mt-1 inline-block rounded-full bg-success-green/10 px-2 py-0.5 text-label-md font-semibold text-success-green">
+                    {deal.offer}
+                  </span>
+                </div>
+              </div>
+              <Icon name="chevron-right" size={20} className="shrink-0 text-outline" />
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );

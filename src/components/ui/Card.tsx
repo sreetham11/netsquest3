@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 
-// Neutral surface card. Grey-dominant: white surface + hairline border, never
-// a blue fill (the one blue fill is the Home balance hero, handled separately).
+// Content Card (DESIGN.md): white surface, 16px internal padding, rounded-lg
+// (16px) corners, one soft ambient shadow — never a heavy drop-shadow, never
+// stacked shadows. This is the generic/default card tier; the Home hero
+// balance card is the ONE "Main Card" (rounded-xl/24px) and is built as its
+// own bespoke markup rather than through this component, same as before.
 export function Card({
   children,
   className = "",
@@ -14,8 +17,8 @@ export function Card({
   return (
     <div
       className={
-        "rounded-card border border-line bg-surface " +
-        (padded ? "p-8 " : "") +
+        "rounded-lg border border-border-light bg-surface-container-lowest shadow-card " +
+        (padded ? "p-stack-md " : "") +
         className
       }
     >

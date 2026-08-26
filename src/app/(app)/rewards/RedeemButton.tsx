@@ -29,7 +29,7 @@ export function RedeemButton({
         {pending ? "Redeeming…" : "Redeem"}
       </Button>
       {state?.error ? (
-        <p className="mt-2 text-xs text-danger-strong">{state.error}</p>
+        <p className="mt-2 text-label-md text-error">{state.error}</p>
       ) : null}
     </form>
   );

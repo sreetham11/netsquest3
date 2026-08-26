@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { recordNetsPayment } from "@/lib/rewards";
@@ -263,6 +264,57 @@ export async function redeemReward(
   revalidatePath("/home");
   revalidatePath("/transactions");
   return { ok: true };
+}
+
+// Powers the Pay flow's confirm step. Same balance+points+transaction write
+// as payBill (via recordNetsPayment, one prisma.$transaction), but on
+// success it redirects straight to the receipt page rather than returning
+// {ok:true} — there's no form left on screen to show a success state on,
+// the whole point is to navigate to Payment Successful.
+export type MakePaymentState = { ok: boolean; error?: string } | null;
+
+export async function makePayment(
+  _prev: MakePaymentState,
+  formData: FormData,
+): Promise<MakePaymentState> {
+  const user = await requireUser();
+  const merchant = String(formData.get("merchant") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim() || "Shopping";
+  const amountCents = Math.round(Number(formData.get("amount")) * 100);
+
+  if (!merchant) return { ok: false, error: "Something went wrong. Try again." };
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    return { ok: false, error: "Enter an amount greater than $0." };
+  }
+
+  const account = await prisma.account.findUnique({ where: { userId: user.id } });
+  if (!account) return { ok: false, error: "Something went wrong. Try again." };
+
+  // Same insufficient-balance message style as payBill.
+  if (account.balanceCents < amountCents) {
+    return { ok: false, error: "Insufficient balance to complete this payment." };
+  }
+
+  let transactionId: string;
+  try {
+    const result = await prisma.$transaction((tx) =>
+      recordNetsPayment(tx, {
+        userId: user.id,
+        description: merchant,
+        category,
+        amountCents,
+        type: "PAYMENT",
+      }),
+    );
+    transactionId = result.transactionId;
+  } catch (err) {
+    return failed(err, "makePayment");
+  }
+
+  revalidatePath("/home");
+  revalidatePath("/rewards");
+  revalidatePath("/transactions");
+  redirect(`/pay/success/${transactionId}`);
 }
 
 // One action for both "add a new category cap" and "edit an existing one" —

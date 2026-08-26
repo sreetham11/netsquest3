@@ -46,3 +46,6 @@ next-env.d.ts
 
 # visual verification screenshots (local scratch output)
 /screenshots
+
+# Stitch design reference material (source of truth for redesign, not shipped)
+/stitch_visual_design_system_foundation

@@ -32,7 +32,7 @@ export function DonutChart({
         cy={size / 2}
         r={r}
         strokeWidth={strokeWidth}
-        className="stroke-neutral-200"
+        className="stroke-surface-container-highest"
         fill="none"
       />
       {segments.map((seg, i) => {

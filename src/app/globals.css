@@ -1,16 +1,25 @@
 @import "tailwindcss";
 
 /* ============================================================================
-   NETS Quest — Design Tokens  (Phase 0, single source of truth)
+   NETS Quest — Design Tokens  (NETS Revitalize, source of truth: see
+   stitch_visual_design_system_foundation/nets_revitalize/DESIGN.md — full
+   color/typography/rounded/spacing spec, not shipped, reference-only)
    ----------------------------------------------------------------------------
    Every color / font-size / radius in the app MUST reference these by NAME.
    - No raw hex codes in component code.
    - No default Tailwind color names (blue-500, zinc-50, red-600, …): the
      default palettes are reset to `initial` below, so those utility classes
      do not compile at all. A component that invents a style renders unstyled
-     and is caught on sight.
+     and is caught on sight. (Carried over from the prior token system —
+     DESIGN.md doesn't ask for this discipline explicitly, but nothing asks to
+     drop it either, and it's cheap insurance against palette drift.)
    - If a component needs something not defined here, STOP and ask — do not add
      a new hue/size/radius unilaterally.
+
+   NOTE: the OLD token names this file used (--color-nets-blue-*, --color-ink,
+   --color-canvas, --color-hero, rounded-card, rounded-button, rounded-wallet,
+   text-sm/lg/xl/2xl, …) are GONE. Any component/page still referencing them
+   renders unstyled until it's migrated in its own phase — expected, not a bug.
    ============================================================================ */
 
 @theme {
@@ -25,106 +34,161 @@
   --color-white: #ffffff;
   --color-black: #000000;
 
-  /* --- Brand: NETS blue --------------------------------------------------- */
-  --color-nets-blue-900: #042c53; /* hero/card backgrounds, primary dark surfaces */
-  --color-nets-blue-700: #0c447c; /* accents, active nav states, links           */
-  --color-nets-blue-100: #e4edf5; /* light backgrounds, subtle highlights        */
+  /* --- Surfaces (Material-3-style roles, per DESIGN.md `colors`) ---------- */
+  --color-surface: #faf9ff;
+  --color-surface-dim: #d9d9e2;
+  --color-surface-bright: #faf9ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3f3fc;
+  --color-surface-container: #ededf6;
+  --color-surface-container-high: #e7e7f0;
+  --color-surface-container-highest: #e1e2eb;
+  --color-surface-variant: #e1e2eb;
+  --color-on-surface: #191b22;
+  --color-on-surface-variant: #424752;
+  --color-inverse-surface: #2e3037;
+  --color-inverse-on-surface: #f0f0f9;
+  --color-outline: #737784;
+  --color-outline-variant: #c2c6d5;
+  --color-surface-tint: #175bbd;
+  --color-background: #faf9ff;
+  --color-on-background: #191b22;
 
-  /* --- Brand: NETS red  (warnings / alerts / negative amounts ONLY) -------- */
-  /* FINAL RULE: red is NEVER a button/CTA color. Blue is the only interactive/
-     CTA color. Red only signals warnings, alerts, and negative amounts.        */
-  --color-nets-red-900: #791f1f; /* negative amounts, strong warnings           */
-  --color-nets-red-700: #a32d2d; /* alert emphasis, sparingly — not a CTA        */
+  /* --- Primary: NETS Blue --------------------------------------------------- */
+  --color-primary: #003c87;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #0052b4;
+  --color-on-primary-container: #b6ccff;
+  --color-inverse-primary: #aec6ff;
+  --color-primary-fixed: #d8e2ff;
+  --color-primary-fixed-dim: #aec6ff;
+  --color-on-primary-fixed: #001a42;
+  --color-on-primary-fixed-variant: #004396;
 
-  /* --- Neutral gray scale (text, borders, backgrounds) -------------------- */
-  --color-neutral-50: #fafafa;
-  --color-neutral-100: #f5f5f5;
-  --color-neutral-200: #e5e5e5;
-  --color-neutral-300: #d4d4d4;
-  --color-neutral-400: #a3a3a3;
-  --color-neutral-500: #737373;
-  --color-neutral-600: #525252;
-  --color-neutral-700: #404040;
-  --color-neutral-800: #262626;
-  --color-neutral-900: #171717;
+  /* --- Secondary: NETS Red (logo, critical status — never a CTA) ---------- */
+  --color-secondary: #bb0019;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #e41d29;
+  --color-on-secondary-container: #fffbff;
+  --color-secondary-fixed: #ffdad6;
+  --color-secondary-fixed-dim: #ffb3ad;
+  --color-on-secondary-fixed: #410003;
+  --color-on-secondary-fixed-variant: #930011;
 
-  /* --- Typography: one family, six locked steps (px size / line-height) --- */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  /* --- Tertiary --------------------------------------------------------- */
+  --color-tertiary: #702800;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #963800;
+  --color-on-tertiary-container: #ffbda1;
+  --color-tertiary-fixed: #ffdbcd;
+  --color-tertiary-fixed-dim: #ffb596;
+  --color-on-tertiary-fixed: #360f00;
+  --color-on-tertiary-fixed-variant: #7d2d00;
 
-  --text-xs: 12px;
-  --text-xs--line-height: 16px;
-  --text-sm: 14px;
-  --text-sm--line-height: 20px;
-  --text-base: 16px;
-  --text-base--line-height: 24px;
-  --text-lg: 18px;
-  --text-lg--line-height: 28px;
-  --text-xl: 20px;
-  --text-xl--line-height: 28px;
-  --text-2xl: 24px;
-  --text-2xl--line-height: 32px;
+  /* --- Error ---------------------------------------------------------------- */
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
 
-  /* --- Radius: exactly two semantic values (+ full for circles) ----------- */
-  --radius-card: 12px; /* every card, identically      */
-  --radius-button: 8px; /* every button / pill, identically */
-  --radius-full: 9999px; /* avatars / circular only       */
-  --radius-wallet: 16px; /* Home wallet-card stack ONLY — explicit, requested exception */
+  /* --- NETS-specific extras (outside the M3 role system) ------------------ */
+  --color-nets-blue-dark: #003a80;
+  --color-nets-blue-gradient-start: #0066ff;
+  --color-nets-blue-gradient-end: #004195;
+  --color-surface-grey: #f5f7fa;
+  --color-border-light: #e2e8f0;
+  --color-success-green: #22c55e; /* positive transaction amounts + completion states ONLY */
+  --color-gold-tier: #d4af37; /* Gold-tier visualization ONLY */
 
-  /* ==========================================================================
-     SEMANTIC TOKENS — encode the NETS usage philosophy.
-     Per NETS' digital style guide the UI is GREY-DOMINANT: neutral surfaces
-     everywhere, "Evening Blue" used SPARINGLY as an accent (buttons, active
-     nav, links, progress bars, headlines) — never as large background fills.
-     Red is rarer still: negative amounts / alerts only.
+  /* --- Typography: Hanken Grotesk, DESIGN.md's 8 named steps --------------
+     Each step bundles size/line-height/weight/tracking into ONE utility
+     (Tailwind v4's --text-*--{line-height,font-weight,letter-spacing}
+     companions), so `text-title-lg` alone reproduces the full spec — no
+     separate font-bold/tracking-tight stacking needed unless a specific
+     instance deliberately deviates from its step's default weight. -------- */
+  --font-sans: var(--font-hanken-grotesk), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
-     USAGE CONTRACT (prefer these semantic names in components):
-       Surfaces / backgrounds  -> neutral, the default everywhere
-         bg-canvas          page/app background            (neutral-50)
-         bg-surface         cards, panels                  (white)
-         bg-surface-muted   secondary/nested surfaces      (neutral-100)
-         border-line        card borders, hairlines        (neutral-200)
-         text-ink           body text                      (neutral-900)
-         text-ink-muted     secondary text                 (neutral-600)
+  --text-label-md: 12px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--font-weight: 500;
+  --text-label-md--letter-spacing: 0.05em;
 
-       Accent (blue) — the ONLY interactive / CTA color. Small areas:
-         text-accent / bg-accent          buttons, CTAs, links, active nav,
-                                          progress bars, headlines (blue-700)
-         bg-accent-strong                 pressed/hover accent     (blue-900)
-         bg-hero                          THE ONE sanctioned blue fill:
-                                          Home balance-card hero   (blue-900)
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--font-weight: 400;
 
-       Alert (red) — warnings / alerts / negative amounts ONLY. NEVER a
-       button or CTA (that is always blue):
-         text-danger / bg-danger          alert emphasis, sparingly (red-700)
-         text-danger-strong               negative amounts, warnings (red-900)
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--font-weight: 400;
 
-     Do NOT paint whole cards/heroes blue. bg-hero is a single deliberate
-     exception for the Home balance card, nothing else.
-     ========================================================================== */
-  --color-canvas: var(--color-neutral-50);
-  --color-surface: var(--color-white);
-  --color-surface-muted: var(--color-neutral-100);
-  --color-line: var(--color-neutral-200);
-  --color-ink: var(--color-neutral-900);
-  --color-ink-muted: var(--color-neutral-600);
+  --text-title-lg: 18px;
+  --text-title-lg--line-height: 24px;
+  --text-title-lg--font-weight: 600;
 
-  --color-accent: var(--color-nets-blue-700);
-  --color-accent-strong: var(--color-nets-blue-900);
-  --color-hero: var(--color-nets-blue-900);
+  --text-card-number: 18px;
+  --text-card-number--line-height: 22px;
+  --text-card-number--font-weight: 500;
+  --text-card-number--letter-spacing: 0.1em;
 
-  --color-danger: var(--color-nets-red-700);
-  --color-danger-strong: var(--color-nets-red-900);
+  --text-headline-md: 20px;
+  --text-headline-md--line-height: 26px;
+  --text-headline-md--font-weight: 600;
+
+  --text-headline-lg: 28px;
+  --text-headline-lg--line-height: 34px;
+  --text-headline-lg--font-weight: 700;
+  --text-headline-lg--letter-spacing: -0.02em;
+
+  --text-currency-display: 32px;
+  --text-currency-display--line-height: 40px;
+  --text-currency-display--font-weight: 700;
+
+  /* --- Radius: DESIGN.md `rounded` block, verbatim ------------------------
+     Main Card (Home hero) = xl (24px); everything else card-like = lg
+     (16px, DESIGN.md's "Content Card" spec); buttons/inputs = lg; pills use
+     full. sm/md exist for completeness (chips, small nested controls). ---- */
+  --radius-sm: 0.25rem; /* 4px */
+  --radius: 0.5rem; /* 8px — DEFAULT */
+  --radius-md: 0.75rem; /* 12px */
+  --radius-lg: 1rem; /* 16px — content cards, buttons, inputs */
+  --radius-xl: 1.5rem; /* 24px — Main/hero card only */
+  --radius-full: 9999px; /* pills, avatars, circular controls */
+
+  /* --- Spacing: DESIGN.md named steps, layered on top of Tailwind's default
+     4px numeric scale (left open/unlocked, same as before) so both
+     `p-4` and `p-stack-md` resolve to the same 16px. Named steps exist so
+     component code can read as self-documenting as the Stitch reference
+     markup itself (px-margin-mobile, gap-gutter-card, …). ------------------ */
+  --spacing-base-unit: 4px;
+  --spacing-stack-sm: 8px;
+  --spacing-gutter-card: 12px;
+  --spacing-stack-md: 16px;
+  --spacing-margin-mobile: 16px;
+  --spacing-stack-lg: 24px;
+
+  /* --- Elevation: ONE soft ambient shadow, no heavy drop-shadows anywhere -
+     DESIGN.md: "single, extremely soft ambient shadow (4px blur, 5%
+     opacity)" for the Main Card; reused as the one card-elevation shadow
+     app-wide (Tonal Layers + this single shadow, never stacked shadows). -- */
+  --shadow-card: 0 2px 4px 0 rgb(25 27 34 / 0.05);
 }
 
-/* ----------------------------------------------------------------------------
-   Spacing scale is Tailwind's default 4px base, so the locked steps map to:
-     1 = 4px   2 = 8px   3 = 12px   4 = 16px   6 = 24px   8 = 32px
-   Use ONLY these named steps (p-1 p-2 p-3 p-4 p-6 p-8, gap-*, m-*, etc.).
-   ---------------------------------------------------------------------------- */
-
+/* Page canvas: DESIGN.md's prose calls `surface-grey` the app background, but
+   its own frontmatter defines a separate `background` token (#faf9ff), and 4
+   of the 6 reference screens render body bg as #faf9ff (2 drifted to their
+   own inline one-off near-white in a local scratch config, not from the
+   shared token set at all). Following the majority + the named token. */
 body {
-  background: var(--color-canvas);
-  color: var(--color-ink);
+  background: var(--color-background);
+  color: var(--color-on-surface);
   font-family: var(--font-sans);
+}
+
+/* Safe-area clearance for content flush against the bottom edge (the bottom
+   nav bar) — iOS home-indicator, per DESIGN.md's "Safe Areas" note. Plain
+   utility class, not a @theme token: Tailwind has no env()-backed namespace
+   to hook a token into, and every reference screen names this the same way. */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 20px);
 }

@@ -1,14 +1,18 @@
 // Circular counterpart to ProgressBar — same tones/tokens, for a summary
 // figure that should read as more prominent than the per-row bars around it.
 const STROKE = {
-  accent: "stroke-accent",
-  "accent-strong": "stroke-accent-strong",
-  danger: "stroke-danger",
+  primary: "stroke-primary",
+  gold: "stroke-gold-tier", // see ProgressBar — solid token only, no undefined gradient hex
+  error: "stroke-error",
+  // Back-compat for Budget (not yet in its own redesign phase) — see ProgressBar.
+  accent: "stroke-primary",
+  "accent-strong": "stroke-nets-blue-dark",
+  danger: "stroke-error",
 } as const;
 
 export function ProgressRing({
   value,
-  tone = "accent",
+  tone = "primary",
   size = 96,
   strokeWidth = 10,
 }: {
@@ -28,7 +32,7 @@ export function ProgressRing({
         cy={size / 2}
         r={r}
         strokeWidth={strokeWidth}
-        className="stroke-neutral-200"
+        className="stroke-surface-container-highest"
         fill="none"
       />
       <circle

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { isNetsPaymentType, pointsForSpendCents, type NetsPaymentType } from "@/lib/rewards";
+import { displayNameFromEmail } from "@/lib/user";
 
 function daysAgo(n: number): Date {
   const d = new Date();
@@ -57,7 +58,7 @@ export async function ensureUserData(userId: string, email: string) {
   await ensureRewardCatalogue();
   await ensureMerchantDeals();
 
-  const ownerName = email.split("@")[0].replace(/[+.].*$/, "") || "You";
+  const ownerName = displayNameFromEmail(email);
 
   const transactions: Array<{
     description: string;

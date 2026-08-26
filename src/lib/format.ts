@@ -15,6 +15,16 @@ export function formatSignedMoney(cents: number, currency = "SGD"): string {
   return cents < 0 ? `-${formatted}` : `+${formatted}`;
 }
 
+// Plain decimal amount, no currency symbol — for layouts that show the
+// currency code as its own separate label (e.g. the Home/Activity balance
+// cards: "SGD" + "84.00" as two distinct pieces, not one "S$84.00" string).
+export function formatAmount(cents: number): string {
+  return new Intl.NumberFormat("en-SG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
 export function formatDate(date: Date): string {
   return new Intl.DateTimeFormat("en-SG", {
     day: "numeric",
