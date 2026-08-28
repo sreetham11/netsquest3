@@ -1,6 +1,11 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { isNetsPaymentType, pointsForSpendCents, type NetsPaymentType } from "@/lib/rewards";
+import {
+  isNetsPaymentType,
+  pointsForSpendCents,
+  POINTS_EXPIRY_MONTHS,
+  type NetsPaymentType,
+} from "@/lib/rewards";
 import { displayNameFromEmail } from "@/lib/user";
 
 function daysAgo(n: number): Date {
@@ -23,6 +28,10 @@ export async function ensureRewardCatalogue() {
       { name: "Fast Food", pointCost: 1_500, category: "fast-food", sortOrder: 2 },
       { name: "Movie Ticket", pointCost: 3_000, category: "movie-ticket", sortOrder: 3 },
       { name: "NTUC Voucher", pointCost: 5_000, category: "voucher", sortOrder: 4 },
+      // Cashback — same 100pts=$1 rate as every other item here, not a
+      // richer one (see cashbackCentsForPoints in src/lib/rewards.ts).
+      { name: "$5 Cashback", pointCost: 500, category: "cashback", sortOrder: 5 },
+      { name: "$10 Cashback", pointCost: 1_000, category: "cashback", sortOrder: 6 },
     ],
     skipDuplicates: true,
   });
@@ -85,28 +94,46 @@ export async function ensureUserData(userId: string, email: string) {
   // Same formula the live actions use (src/lib/rewards.ts) — every NETS
   // payment in the seed earns points, so a fresh demo account already shows
   // real progress instead of a placeholder number. INCOME is skipped here for
-  // the same reason it earns nothing at runtime: it's money coming in.
+  // the same reason it earns nothing at runtime: it's money coming in. No
+  // tier multiplier needed here (unlike recordNetsPayment) — every seeded
+  // transaction falls within the last 10 days, so even seeding them in order
+  // the running monthly count never reaches Silver (10) before the last one,
+  // meaning every seeded payment is Member tier (1x) regardless of order.
   const rewardPoints = transactions
     .filter((t) => isNetsPaymentType(t.type))
     .reduce((sum, t) => sum + pointsForSpendCents(t.amountCents), 0);
 
-  // Opening balance and the rows those points were computed from go in one
-  // transaction — the same invariant recordNetsPayment enforces at runtime. If
-  // the ledger write failed on its own, the account would open with points that
-  // no transaction explains, and nothing recomputes the balance afterwards.
-  await prisma.$transaction([
-    prisma.account.create({
-      data: {
-        userId,
-        balanceCents: 124_000,
-        currency: "SGD",
-        rewardPoints,
-      },
-    }),
-    prisma.transaction.createMany({
-      data: transactions.map((t) => ({ ...t, userId })),
-    }),
-  ]);
+  // Opening balance, the transaction rows those points were computed from,
+  // AND the PointLot each qualifying one earned all go in one transaction —
+  // the same invariant recordNetsPayment enforces at runtime. If any of this
+  // failed partway, the account could open with points no transaction (or no
+  // lot) explains, and nothing recomputes rewardPoints from the ledger
+  // afterwards. Individual creates (not createMany) because each PointLot
+  // needs its transaction's generated id, which createMany doesn't return.
+  await prisma.$transaction(async (tx) => {
+    await tx.account.create({
+      data: { userId, balanceCents: 124_000, currency: "SGD", rewardPoints },
+    });
+
+    for (const t of transactions) {
+      const row = await tx.transaction.create({ data: { ...t, userId } });
+      if (!isNetsPaymentType(t.type)) continue;
+      const points = pointsForSpendCents(t.amountCents);
+      if (points === 0) continue; // e.g. would-be-seeded sub-$2 payment, none currently exist
+      const expiresAt = new Date(row.createdAt);
+      expiresAt.setMonth(expiresAt.getMonth() + POINTS_EXPIRY_MONTHS);
+      await tx.pointLot.create({
+        data: {
+          userId,
+          transactionId: row.id,
+          pointsEarned: points,
+          pointsRemaining: points,
+          earnedAt: row.createdAt,
+          expiresAt,
+        },
+      });
+    }
+  });
 
   // Instant bill splits — name-only participants, no invites/real accounts.
   await prisma.split.create({
@@ -141,12 +168,17 @@ export async function ensureUserData(userId: string, email: string) {
   });
 
   // Tiers key off monthly NETS-payment COUNT, not spend — see src/lib/rewards.ts.
+  // Thresholds tuned to be reachable within a demo month (the old 0/20/50/100
+  // scale was steep enough that Gold/Platinum were effectively unreachable).
+  // Multipliers stay small (max 1.5x) — the real tier benefit is meant to be
+  // better merchant offers and earlier access to promos, not a big permanent
+  // earn-rate jump, so perk copy leads with that rather than the multiplier.
   await prisma.rewardTier.createMany({
     data: [
-      { userId, name: "Bronze", perk: "Standard earn rate", txnCountNeeded: 0, sortOrder: 0 },
-      { userId, name: "Silver", perk: "Early access to promos", txnCountNeeded: 20, sortOrder: 1 },
-      { userId, name: "Gold", perk: "Bonus point multiplier on weekends", txnCountNeeded: 50, sortOrder: 2 },
-      { userId, name: "Platinum", perk: "Premium partner offers + exclusive rewards", txnCountNeeded: 100, sortOrder: 3 },
+      { userId, name: "Member", perk: "Standard earn rate", txnCountNeeded: 0, multiplierPercent: 100, sortOrder: 0 },
+      { userId, name: "Silver", perk: "Early access to promos", txnCountNeeded: 10, multiplierPercent: 100, sortOrder: 1 },
+      { userId, name: "Gold", perk: "Priority merchant offers, 1.25x points", txnCountNeeded: 20, multiplierPercent: 125, sortOrder: 2 },
+      { userId, name: "Platinum", perk: "Premium partner offers + early access, 1.5x points", txnCountNeeded: 40, multiplierPercent: 150, sortOrder: 3 },
     ],
   });
 

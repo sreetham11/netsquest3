@@ -18,24 +18,31 @@ model Account {
   userId       String   @unique
   balanceCents Int      @default(0)
   currency     String   @default("SGD")
-  rewardPoints Int      @default(0) // 5 pts per S$1 of NETS payment, see src/lib/rewards.ts
+  rewardPoints Int      @default(0) // 1 pt per S$1 of NETS payment, tier multiplier applies — see src/lib/rewards.ts
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
 
 // Simulated money movement. amountCents < 0 = debit/spend, > 0 = credit.
 model Transaction {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   userId           String
   description      String
   category         String
   amountCents      Int
-  type             TxnType  @default(PAYMENT)
+  type             TxnType   @default(PAYMENT)
   // Overseas fields (set when the spend happened abroad).
   country          String?
   currencyLocal    String?
   amountLocalCents Int?
-  createdAt        DateTime @default(now())
+  // Set once this transaction has been refunded — guards against
+  // refunding (and clawing back points for) the same payment twice.
+  refundedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  // The PointLot this payment earned, if any (not Supabase-auth-tied like
+  // userId, so a real relation is fine and makes "recent point events with
+  // their transaction details" a single query instead of a manual join).
+  pointLot         PointLot?
 
   @@index([userId, createdAt])
 }
@@ -48,6 +55,7 @@ enum TxnType {
   BILL
   REWARD
   INCOME
+  REFUND
 }
 
 // Instant bill/receipt split among named participants — no invites, no real
@@ -87,6 +95,10 @@ model RewardTier {
   perk           String
   txnCountNeeded Int
   sortOrder      Int    @default(0)
+  // Stored as hundredths (100 = 1x, 125 = 1.25x) so tier-adjusted point math
+  // stays integer-only, matching this app's "no floats in money/points" rule
+  // — see applyTierMultiplier in src/lib/rewards.ts.
+  multiplierPercent Int @default(100)
 
   @@index([userId])
 }
@@ -98,7 +110,7 @@ model Reward {
   id          String       @id @default(cuid())
   name        String       @unique
   pointCost   Int
-  category    String // maps to an Icon in the UI: coffee, bubble-tea, fast-food, movie-ticket, voucher
+  category    String // maps to an Icon in the UI: coffee, bubble-tea, fast-food, movie-ticket, voucher, cashback
   sortOrder   Int          @default(0)
   redemptions Redemption[]
 }
@@ -125,6 +137,29 @@ model Redemption {
   reward      Reward   @relation(fields: [rewardId], references: [id])
 
   @@index([userId, createdAt])
+}
+
+// One row per point-EARNING event (one per qualifying Transaction). Exists
+// because points are no longer a pure function of amountCents alone — the
+// tier multiplier means how many points a payment earned depends on which
+// tier the user was in at that moment, so the actual awarded amount has to
+// be recorded, not recomputed later. `pointsRemaining` is consumed FIFO
+// (oldest earnedAt first) by redemptions and by refunds, and swept to 0 by
+// the 12-month expiry check — see sweepExpiredPoints/consumePointsFifo in
+// src/lib/rewards.ts. `pointsEarned` never changes after creation; it's the
+// permanent record of what this specific payment earned.
+model PointLot {
+  id              String      @id @default(cuid())
+  userId          String
+  transactionId   String      @unique
+  transaction     Transaction @relation(fields: [transactionId], references: [id])
+  pointsEarned    Int
+  pointsRemaining Int
+  earnedAt        DateTime    @default(now())
+  expiresAt       DateTime
+
+  @@index([userId, earnedAt])
+  @@index([userId, expiresAt])
 }
 
 // Per-user, per-category monthly spending cap.

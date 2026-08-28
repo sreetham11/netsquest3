@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { recordNetsPayment } from "@/lib/rewards";
+import { recordNetsPayment, consumePointsFifo, cashbackCentsForPoints } from "@/lib/rewards";
+import { isNetsPaymentType } from "@/lib/netsPaymentTypes";
 import { startOfThisMonth } from "@/lib/data/queries";
 
 // All of these are SIMULATED money movements — they only write rows to Postgres
@@ -218,22 +219,36 @@ export async function redeemReward(
     };
   }
 
+  // Cashback redeems at the exact same 100pts=$1 rate as the rest of the
+  // catalogue — deliberately not a richer rate, see cashbackCentsForPoints.
+  const isCashback = reward.category === "cashback";
+  const cashbackCents = isCashback ? cashbackCentsForPoints(reward.pointCost) : 0;
+
   try {
     await prisma.$transaction(async (tx) => {
       // Conditional decrement: `rewardPoints >= pointCost` lives in the WHERE,
       // so Postgres re-evaluates it against the committed row after locking it.
       // Two submissions racing off the same stale balance can't both win, which
       // is what keeps rewardPoints from ever going negative — a plain
-      // read-then-decrement would let the second one underflow.
+      // read-then-decrement would let the second one underflow. Cashback's
+      // balance credit rides in the SAME conditional update, so the points
+      // deduction and the money credit either both happen or neither does.
       const debited = await tx.account.updateMany({
         where: { userId: user.id, rewardPoints: { gte: reward.pointCost } },
-        data: { rewardPoints: { decrement: reward.pointCost } },
+        data: {
+          rewardPoints: { decrement: reward.pointCost },
+          ...(isCashback ? { balanceCents: { increment: cashbackCents } } : {}),
+        },
       });
       if (debited.count === 0) {
         throw new ActionAbort(
           "Your point balance just changed — refresh and try redeeming again.",
         );
       }
+
+      // Keeps PointLot.pointsRemaining honest so the 12-month expiry sweep
+      // never double-counts points a redemption already spent.
+      await consumePointsFifo(tx, user.id, reward.pointCost);
 
       await tx.redemption.create({
         data: {
@@ -243,15 +258,16 @@ export async function redeemReward(
         },
       });
 
-      // $0 ledger row so a redemption is visible in Transactions too; txnValue()
-      // renders REWARD rows as "Redeemed" instead of a "+$0.00" that would read
-      // like a bug in a money ledger (src/lib/txn.ts).
+      // Cashback gets a real credit row (txnValue() shows the $ amount, same
+      // as a top-up); a catalogue voucher stays a $0 row — txnValue() renders
+      // that as "Redeemed" instead of a "+$0.00" that would read like a bug
+      // in a money ledger (src/lib/txn.ts).
       await tx.transaction.create({
         data: {
           userId: user.id,
-          description: `Redeemed: ${reward.name}`,
+          description: isCashback ? `Cashback: ${reward.name}` : `Redeemed: ${reward.name}`,
           category: "Rewards",
-          amountCents: 0,
+          amountCents: cashbackCents,
           type: "REWARD",
         },
       });
@@ -263,6 +279,92 @@ export async function redeemReward(
   revalidatePath("/rewards");
   revalidatePath("/home");
   revalidatePath("/transactions");
+  return { ok: true };
+}
+
+// Refunds a NETS payment: credits the balance back and claws back the points
+// that payment originally earned (see the "deliberate reversal" note on
+// pointsForSpendCents in src/lib/rewards.ts). Claws back whatever's still
+// alive in that payment's PointLot — no more than that, and never past what
+// the account currently holds, so a payment already partly "spent" via a
+// redemption doesn't drive the balance negative.
+export type RefundTransactionState = { ok: boolean; error?: string } | null;
+
+export async function refundTransaction(
+  _prev: RefundTransactionState,
+  formData: FormData,
+): Promise<RefundTransactionState> {
+  const user = await requireUser();
+  const transactionId = String(formData.get("transactionId") ?? "");
+  if (!transactionId) return { ok: false, error: "Something went wrong. Try again." };
+
+  const original = await prisma.transaction.findFirst({
+    where: { id: transactionId, userId: user.id },
+  });
+  if (!original) return { ok: false, error: "Something went wrong. Try again." };
+  if (original.refundedAt) {
+    return { ok: false, error: "This payment has already been refunded." };
+  }
+  if (!isNetsPaymentType(original.type) || original.amountCents >= 0) {
+    return { ok: false, error: "This transaction can't be refunded." };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Conditional claim, same technique as payBill's "already paid" guard —
+      // re-checked here so two rapid refund clicks can't both succeed and
+      // double-credit the balance / double-claw-back points.
+      const claimed = await tx.transaction.updateMany({
+        where: { id: original.id, userId: user.id, refundedAt: null },
+        data: { refundedAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw new ActionAbort("This payment has already been refunded.");
+      }
+
+      const refundCents = Math.abs(original.amountCents);
+      await tx.account.update({
+        where: { userId: user.id },
+        data: { balanceCents: { increment: refundCents } },
+      });
+
+      const lot = await tx.pointLot.findUnique({ where: { transactionId: original.id } });
+      if (lot && lot.pointsRemaining > 0) {
+        const account = await tx.account.findUnique({ where: { userId: user.id } });
+        // Never claw back more than the account currently has — "never
+        // award negative points" applies to clawback too.
+        const clawback = Math.min(lot.pointsRemaining, account?.rewardPoints ?? 0);
+        if (clawback > 0) {
+          const debited = await tx.account.updateMany({
+            where: { userId: user.id, rewardPoints: { gte: clawback } },
+            data: { rewardPoints: { decrement: clawback } },
+          });
+          if (debited.count > 0) {
+            await tx.pointLot.update({
+              where: { id: lot.id },
+              data: { pointsRemaining: { decrement: clawback } },
+            });
+          }
+        }
+      }
+
+      await tx.transaction.create({
+        data: {
+          userId: user.id,
+          description: `Refund: ${original.description}`,
+          category: original.category,
+          amountCents: refundCents,
+          type: "REFUND",
+        },
+      });
+    });
+  } catch (err) {
+    return failed(err, "refundTransaction");
+  }
+
+  revalidatePath("/transactions");
+  revalidatePath("/home");
+  revalidatePath("/rewards");
   return { ok: true };
 }
 

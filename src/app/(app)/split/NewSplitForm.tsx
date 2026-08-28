@@ -22,6 +22,7 @@ const DEFAULT_NAME = "You";
 type EntryMode = "manual" | "scan";
 type ScanStep = "options" | "loading" | "review" | "confirmed" | "error";
 type DraftItem = { id: number; name: string; price: string };
+type SplitMethod = "equal" | "custom" | "items";
 
 function distributeEqually(totalCents: number, count: number): number[] {
   if (count <= 0) return [];
@@ -29,6 +30,33 @@ function distributeEqually(totalCents: number, count: number): number[] {
   const remainder = totalCents - base * count;
   // First `remainder` people carry the extra cent so the split always sums exactly.
   return Array.from({ length: count }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+
+// Distributes `deltaCents` (the gap between the scanned items' sum and the
+// confirmed total — usually tax/service charge, occasionally a discount)
+// across people proportional to each person's item subtotal, via largest-
+// remainder rounding — floor everyone's exact share, then hand out the
+// leftover cents to whoever's fractional share was biggest, so the parts
+// always sum to EXACTLY deltaCents regardless of rounding. Splitting tax
+// evenly regardless of what each person ordered would be the simpler
+// implementation, but proportional-to-spend is what a real per-item split
+// is expected to do.
+function distributeProportionally(deltaCents: number, weights: number[]): number[] {
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
+  if (totalWeight <= 0 || deltaCents === 0) return weights.map(() => 0);
+  const raw = weights.map((w) => (deltaCents * w) / totalWeight);
+  const floors = raw.map((r) => Math.trunc(r));
+  let leftover = deltaCents - floors.reduce((s, f) => s + f, 0);
+  const byRemainder = raw
+    .map((r, i) => ({ i, frac: r - Math.trunc(r) }))
+    .sort((a, b) => b.frac - a.frac);
+  const result = [...floors];
+  for (let k = 0; k < byRemainder.length && leftover !== 0; k++) {
+    const step = leftover > 0 ? 1 : -1;
+    result[byRemainder[k].i] += step;
+    leftover -= step;
+  }
+  return result;
 }
 
 function draftItemsFrom(receipt: ParsedReceipt): DraftItem[] {
@@ -46,8 +74,12 @@ export function NewSplitForm() {
   const [category, setCategory] = useState("General");
   const [names, setNames] = useState<string[]>([DEFAULT_NAME]);
   const [nameInput, setNameInput] = useState("");
-  const [method, setMethod] = useState<"equal" | "custom">("equal");
+  const [method, setMethod] = useState<SplitMethod>("equal");
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
+  // Item id -> names assigned to it. Only meaningful in "items" method, and
+  // only ever populated from a scan (there's no per-item data in manual
+  // entry) — see the method-picker's conditional render below.
+  const [itemAssignments, setItemAssignments] = useState<Record<number, string[]>>({});
 
   const [mode, setMode] = useState<EntryMode>("manual");
   const [scanStep, setScanStep] = useState<ScanStep>("options");
@@ -74,6 +106,7 @@ export function NewSplitForm() {
     setNameInput("");
     setMethod("equal");
     setCustomAmounts({});
+    setItemAssignments({});
     setExpanded(false);
     setMode("manual");
     setScanStep("options");
@@ -92,16 +125,66 @@ export function NewSplitForm() {
   const customSum = names.reduce((s, n) => s + customCentsFor(n), 0);
   const customValid = totalCents > 0 && customSum === totalCents;
 
+  function toggleItemAssignee(itemId: number, name: string) {
+    setItemAssignments((prev) => {
+      const current = prev[itemId] ?? [];
+      const next = current.includes(name) ? current.filter((n) => n !== name) : [...current, name];
+      return { ...prev, [itemId]: next };
+    });
+  }
+
+  // Each item's price splits equally among whoever it's assigned to, summed
+  // per person; the gap between the items' sum and the confirmed total
+  // (usually tax/service charge) is then split proportional to each
+  // person's item subtotal — see distributeProportionally.
+  const itemBaseShares = useMemo(() => {
+    const base: Record<string, number> = Object.fromEntries(names.map((n) => [n, 0]));
+    for (const item of scanItems) {
+      const assignees = (itemAssignments[item.id] ?? []).filter((n) => names.includes(n));
+      if (assignees.length === 0) continue;
+      const priceCents = Math.round((Number(item.price) || 0) * 100);
+      const shares = distributeEqually(priceCents, assignees.length);
+      assignees.forEach((name, i) => {
+        base[name] = (base[name] ?? 0) + (shares[i] ?? 0);
+      });
+    }
+    return base;
+  }, [scanItems, itemAssignments, names]);
+
+  const itemSharesByPerson = useMemo(() => {
+    const itemsAssignedSum = Object.values(itemBaseShares).reduce((s, v) => s + v, 0);
+    const deltaShares = distributeProportionally(
+      totalCents - itemsAssignedSum,
+      names.map((n) => itemBaseShares[n] ?? 0),
+    );
+    const result: Record<string, number> = {};
+    names.forEach((n, i) => {
+      result[n] = (itemBaseShares[n] ?? 0) + (deltaShares[i] ?? 0);
+    });
+    return result;
+  }, [itemBaseShares, names, totalCents]);
+
+  const allItemsAssigned =
+    scanItems.length > 0 && scanItems.every((it) => (itemAssignments[it.id] ?? []).length > 0);
+  const itemsValid = totalCents > 0 && allItemsAssigned;
+
   const participants = names.map((name, i) => ({
     name,
-    shareAmountCents: method === "equal" ? equalShares[i] : customCentsFor(name),
+    shareAmountCents:
+      method === "equal"
+        ? equalShares[i]
+        : method === "items"
+          ? (itemSharesByPerson[name] ?? 0)
+          : customCentsFor(name),
   }));
 
   const canSubmit =
     title.trim().length > 0 &&
     totalCents > 0 &&
     names.length > 0 &&
-    (method === "equal" || customValid);
+    (method === "equal" ||
+      (method === "custom" && customValid) ||
+      (method === "items" && itemsValid));
 
   function addName() {
     const n = nameInput.trim();
@@ -115,6 +198,11 @@ export function NewSplitForm() {
 
   function removeName(n: string) {
     setNames((prev) => prev.filter((x) => x !== n));
+    // Purge from item assignments too, so a removed person doesn't stay
+    // invisibly "assigned" to items and silently absorb a share of them.
+    setItemAssignments((prev) =>
+      Object.fromEntries(Object.entries(prev).map(([id, assignees]) => [id, assignees.filter((x) => x !== n)])),
+    );
   }
 
   async function handleReceiptFile(file: File | undefined) {
@@ -162,6 +250,10 @@ export function NewSplitForm() {
 
   function backToManual() {
     setMode("manual");
+    // "By items" only makes sense with scanned line items — falling back to
+    // manual entry without also falling back the method would strand the
+    // form on a method with nothing to assign.
+    setMethod((m) => (m === "items" ? "equal" : m));
   }
 
   function confirmScan() {
@@ -203,7 +295,10 @@ export function NewSplitForm() {
           <Button
             type="button"
             variant={mode === "manual" ? "primary" : "secondary"}
-            onClick={() => setMode("manual")}
+            onClick={() => {
+              setMode("manual");
+              setMethod((m) => (m === "items" ? "equal" : m));
+            }}
             className="flex-1 justify-center"
           >
             Manual entry
@@ -522,6 +617,18 @@ export function NewSplitForm() {
                   >
                     Equal split
                   </Button>
+                  {/* Only available after a scan produced itemized data —
+                      manual entry has no per-item prices to assign. */}
+                  {scanItems.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant={method === "items" ? "primary" : "secondary"}
+                      onClick={() => setMethod("items")}
+                      className="flex-1 justify-center"
+                    >
+                      By items
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant={method === "custom" ? "primary" : "secondary"}
@@ -533,6 +640,49 @@ export function NewSplitForm() {
                 </div>
               </div>
 
+              {method === "items" ? (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-ink">Who had what?</span>
+                  <div className="divide-y divide-line rounded-button border border-line">
+                    {scanItems.map((item) => {
+                      const assignees = itemAssignments[item.id] ?? [];
+                      return (
+                        <div key={item.id} className="flex flex-col gap-2 px-3 py-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-ink">{item.name || "Unnamed item"}</span>
+                            <span className="text-sm font-medium text-ink">
+                              {formatMoney(Math.round((Number(item.price) || 0) * 100))}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {names.map((n) => (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => toggleItemAssignee(item.id, n)}
+                                className={
+                                  assignees.includes(n)
+                                    ? "rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-white"
+                                    : "rounded-full border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted"
+                                }
+                              >
+                                {n}
+                              </button>
+                            ))}
+                          </div>
+                          {assignees.length === 0 ? (
+                            <p className="text-xs text-danger-strong">Nobody&apos;s assigned to this yet</p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!allItemsAssigned ? (
+                    <p className="text-xs text-danger-strong">Assign every item to at least one person</p>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="divide-y divide-line rounded-button border border-line">
                 {names.map((n, i) => (
                   <div key={n} className="flex items-center justify-between px-3 py-2">
@@ -540,6 +690,10 @@ export function NewSplitForm() {
                     {method === "equal" ? (
                       <span className="text-sm font-semibold text-ink">
                         {formatMoney(equalShares[i] ?? 0)}
+                      </span>
+                    ) : method === "items" ? (
+                      <span className="text-sm font-semibold text-ink">
+                        {formatMoney(itemSharesByPerson[n] ?? 0)}
                       </span>
                     ) : (
                       <div className="relative w-28">

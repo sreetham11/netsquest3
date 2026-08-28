@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { NETS_PAYMENT_TYPES, pointsForSpendCents } from "@/lib/rewards";
+import { sweepExpiredPoints } from "@/lib/rewards";
 
 export function startOfThisMonth(): Date {
   const now = new Date();
@@ -49,12 +49,24 @@ export async function getSplits(userId: string) {
   });
 }
 
+// How soon an expiring lot counts as "worth a heads-up" in the UI.
+const EXPIRY_WARNING_DAYS = 60;
+
 // Everything the Rewards page needs: point balance, tiers (keyed to monthly
 // NETS-payment count), the redemption catalogue, recent redemption history (so
 // a reload still shows the confirmation — it's a real DB row, not client
 // state), and the recent point-earning events behind the balance.
 export async function getRewards(userId: string) {
-  const [account, tiers, catalogue, monthlyPaymentCount, recentRedemptions, earningTxns] =
+  // Runs first and awaited on its own: it can WRITE (deduct expired points),
+  // so everything read below has to happen after it, not concurrently with
+  // it — there's no scheduler in this app, so this is where the 12-month
+  // expiry actually takes effect (see sweepExpiredPoints's own comment).
+  await sweepExpiredPoints(prisma, userId);
+
+  const expiryWarningCutoff = new Date();
+  expiryWarningCutoff.setDate(expiryWarningCutoff.getDate() + EXPIRY_WARNING_DAYS);
+
+  const [account, tiers, catalogue, monthlyPaymentCount, recentRedemptions, recentLots, expiringLots] =
     await Promise.all([
       prisma.account.findUnique({ where: { userId } }),
       prisma.rewardTier.findMany({
@@ -62,16 +74,18 @@ export async function getRewards(userId: string) {
         orderBy: { sortOrder: "asc" },
       }),
       prisma.reward.findMany({ orderBy: { pointCost: "asc" } }),
-      // Tier progress is a COUNT of this calendar month's NETS payments, never
-      // a sum of spend — see the RewardTier comment in prisma/schema.prisma.
-      // Recomputed here on every load, so it resets on its own when the month
-      // rolls over and reads 0 (= entry tier) for a user who hasn't paid yet.
-      prisma.transaction.count({
-        where: {
-          userId,
-          type: { in: [...NETS_PAYMENT_TYPES] },
-          createdAt: { gte: startOfThisMonth() },
-        },
+      // Tier progress is a COUNT of this calendar month's QUALIFYING NETS
+      // payments, never a sum of spend — see the RewardTier comment in
+      // prisma/schema.prisma. Counting PointLots rather than Transactions
+      // directly: a lot only exists for a payment that actually earned
+      // points, so this automatically excludes sub-$2 payments and any
+      // payment that hit the per-merchant daily cap (src/lib/rewards.ts)
+      // without needing a second filter to stay in sync with that logic.
+      // Recomputed here on every load, so it resets on its own when the
+      // month rolls over and reads 0 (= entry tier) for a user who hasn't
+      // qualified yet.
+      prisma.pointLot.count({
+        where: { userId, earnedAt: { gte: startOfThisMonth() } },
       }),
       prisma.redemption.findMany({
         where: { userId },
@@ -79,28 +93,45 @@ export async function getRewards(userId: string) {
         take: 5,
         include: { reward: true },
       }),
-      // Earn history comes from the Transaction rows themselves — points are a
-      // pure function of the spend (pointsForSpendCents), so a separate ledger
-      // table could only ever drift away from what actually happened.
-      prisma.transaction.findMany({
-        where: { userId, type: { in: [...NETS_PAYMENT_TYPES] } },
-        orderBy: { createdAt: "desc" },
+      // Earn history reads the ACTUAL awarded points from PointLot, not a
+      // recompute off amountCents — recomputing would be wrong once a tier
+      // multiplier exists, since it depends on which tier applied at the
+      // time, not just the spend amount. include: transaction pulls the
+      // description/category for display in one query.
+      prisma.pointLot.findMany({
+        where: { userId },
+        orderBy: { earnedAt: "desc" },
         take: 5,
+        include: { transaction: true },
+      }),
+      prisma.pointLot.findMany({
+        where: { userId, pointsRemaining: { gt: 0 }, expiresAt: { lte: expiryWarningCutoff } },
+        orderBy: { expiresAt: "asc" },
       }),
     ]);
+
   return {
     points: account?.rewardPoints ?? 0,
     tiers,
     catalogue,
     monthlyPaymentCount,
     recentRedemptions,
-    recentPointEvents: earningTxns.map((t) => ({
-      id: t.id,
-      description: t.description,
-      category: t.category,
-      createdAt: t.createdAt,
-      points: pointsForSpendCents(t.amountCents),
+    recentPointEvents: recentLots.map((lot) => ({
+      id: lot.id,
+      description: lot.transaction.description,
+      category: lot.transaction.category,
+      createdAt: lot.earnedAt,
+      points: lot.pointsEarned,
     })),
+    // Soonest-expiring batch worth a heads-up, if any — null when nothing
+    // expires within EXPIRY_WARNING_DAYS.
+    expiringSoon:
+      expiringLots.length > 0
+        ? {
+            points: expiringLots.reduce((sum, lot) => sum + lot.pointsRemaining, 0),
+            earliestExpiresAt: expiringLots[0].expiresAt,
+          }
+        : null,
   };
 }
 
