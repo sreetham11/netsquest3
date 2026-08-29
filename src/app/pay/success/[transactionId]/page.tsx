@@ -6,7 +6,7 @@ import { getRewards } from "@/lib/data/queries";
 import { Icon } from "@/components/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { formatAmount, formatDayMonth, formatTime } from "@/lib/format";
-import { POINTS_PER_DOLLAR, pointsForSpendCents, resolveTierProgress } from "@/lib/rewards";
+import { PROGRAMME_NAME, POINTS_PER_DOLLAR, resolveTierProgress } from "@/lib/rewards";
 
 // Outside (app)/, same reason as /pay itself: payment_successful/screen.png
 // explicitly suppresses standard nav entirely for transactional/success
@@ -20,7 +20,16 @@ export default async function PaymentSuccessPage({
   const { transactionId } = await params;
 
   const [transaction, rewards] = await Promise.all([
-    prisma.transaction.findFirst({ where: { id: transactionId, userId: user.id } }),
+    // include: pointLot — pointsEarned has to come from the PointLot this
+    // payment actually created, not a recompute off amountCents. Once a
+    // tier multiplier exists, how many points a payment earned depends on
+    // which tier the payer was in at the time, which amountCents alone can't
+    // tell you (and recomputing "now" would be wrong if the tier has since
+    // changed, or 0 if the payment was later refunded and the lot depleted).
+    prisma.transaction.findFirst({
+      where: { id: transactionId, userId: user.id },
+      include: { pointLot: true },
+    }),
     // Reused, not reimplemented — same tier-progress logic the Rewards
     // page's Points tab already uses.
     getRewards(user.id),
@@ -29,12 +38,20 @@ export default async function PaymentSuccessPage({
   // account's transaction if someone guesses/replays an old URL.
   if (!transaction) notFound();
 
-  const pointsEarned = pointsForSpendCents(transaction.amountCents);
+  const pointsEarned = transaction.pointLot?.pointsEarned ?? 0;
   const { current: currentTier, next: nextTier, progress: tierProgress, atTopTier } =
     resolveTierProgress(rewards.tiers, rewards.monthlyPaymentCount);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col items-center gap-stack-lg bg-background px-margin-mobile pb-24 pt-12">
+    // Full-bleed background wrapper + a narrower centered content column,
+    // same split ScanPay uses — bg-background belongs on the OUTER div so
+    // desktop doesn't show a blank browser-default margin either side of a
+    // narrow card. The max-w-md column itself is deliberately narrow even on
+    // desktop (a receipt reads fine at that width; this isn't the "match
+    // AppShell's max-w-3xl" case ScanPay needed, since there's no wide
+    // scanner/list content here that would otherwise stretch awkwardly).
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto flex max-w-md flex-col items-center gap-stack-lg px-margin-mobile pb-24 pt-12">
       <div className="flex flex-col items-center gap-stack-sm">
         <div className="flex h-20 w-20 items-center justify-center rounded-full bg-success-green shadow-card">
           <Icon name="check" size={40} className="text-white" />
@@ -80,14 +97,20 @@ export default async function PaymentSuccessPage({
             </span>
             <div>
               <h3 className="text-title-lg text-on-surface">{currentTier?.name ?? "No tier yet"}</h3>
-              {/* Real earn rate, not Stitch's "6 pts / $1" — see Home/Rewards
-                  for the same flag. No tier-based multiplier exists. */}
-              <p className="text-label-md text-on-surface-variant">{POINTS_PER_DOLLAR} pts / $1</p>
+              {/* Resolved: flat 1 pt/$1, not Stitch's unconfirmed "6 pts/$1"
+                  — see Home/Rewards for the same note. Tiers add a small
+                  multiplier on top (shown when it isn't 1x). */}
+              <p className="text-label-md text-on-surface-variant">
+                {POINTS_PER_DOLLAR} pt / $1
+                {currentTier && currentTier.multiplierPercent !== 100
+                  ? ` × ${(currentTier.multiplierPercent / 100).toFixed(2).replace(/\.?0+$/, "")}`
+                  : ""}
+              </p>
             </div>
           </div>
           <p className="flex items-center gap-1 text-title-lg font-semibold text-success-green">
             <Icon name="circle-plus" size={18} />
-            {pointsEarned} NETS Points
+            {pointsEarned} {PROGRAMME_NAME}
           </p>
         </div>
 
@@ -132,6 +155,7 @@ export default async function PaymentSuccessPage({
         >
           View Transaction
         </Link>
+      </div>
       </div>
     </div>
   );

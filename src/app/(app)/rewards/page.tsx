@@ -6,9 +6,9 @@ import { ListRow } from "@/components/ui/ListRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/Icon";
-import { formatDayMonth, formatTime } from "@/lib/format";
+import { formatDayMonth, formatTime, formatMoney } from "@/lib/format";
 import { categoryIcon } from "@/lib/categoryIcon";
-import { POINTS_PER_DOLLAR, resolveTierProgress } from "@/lib/rewards";
+import { PROGRAMME_NAME, POINTS_PER_DOLLAR, cashbackCentsForPoints, resolveTierProgress } from "@/lib/rewards";
 import { RedeemButton } from "./RedeemButton";
 
 const REWARD_ICON: Record<string, IconName> = {
@@ -17,6 +17,7 @@ const REWARD_ICON: Record<string, IconName> = {
   "fast-food": "fast-food",
   "movie-ticket": "movie-ticket",
   voucher: "voucher",
+  cashback: "wallet",
 };
 
 const DEAL_ICON: Record<string, IconName> = {
@@ -44,7 +45,7 @@ export default async function RewardsPage({
           the shared PageHeader's neutral on-surface title — PageHeader is
           still used by not-yet-redesigned pages, so this is a one-off
           heading here rather than a change to that shared component. */}
-      <h1 className="mb-6 text-headline-lg text-primary">Rewards</h1>
+      <h1 className="mb-6 text-headline-lg text-primary">{PROGRAMME_NAME}</h1>
 
       <div className="mb-6 flex gap-2">
         <ButtonLink
@@ -72,8 +73,9 @@ async function PointsTab({ userId }: { userId: string }) {
   // Every number below is derived from this one freshly-fetched read. The page
   // is dynamic (requireUser reads cookies), and every action that moves points
   // revalidates /rewards, so the balance, the tier and the distance-to-next
-  // reward can't disagree with each other or lag a redemption.
-  const { points, tiers, catalogue, monthlyPaymentCount, recentRedemptions, recentPointEvents } =
+  // reward can't disagree with each other or lag a redemption. getRewards()
+  // also sweeps expired points (12-month expiry) as part of this same read.
+  const { points, tiers, catalogue, monthlyPaymentCount, recentRedemptions, recentPointEvents, expiringSoon } =
     await getRewards(userId);
 
   const {
@@ -97,7 +99,7 @@ async function PointsTab({ userId }: { userId: string }) {
       <Card className="relative overflow-hidden border-gold-tier/30">
         <div className="mb-8 flex items-start justify-between">
           <div>
-            <p className="text-body-md text-on-surface-variant">Available Points</p>
+            <p className="text-body-md text-on-surface-variant">Available {PROGRAMME_NAME}</p>
             <p className="mt-1 text-currency-display text-primary">
               {points.toLocaleString()} <span className="text-body-md font-medium">pts</span>
             </p>
@@ -109,13 +111,16 @@ async function PointsTab({ userId }: { userId: string }) {
                 {currentTier?.name ?? "No tier yet"}
               </span>
             </div>
-            {/* Real earn rate, not Stitch's "6 pts / $1 spent" — there is no
-                tier-based point multiplier in this system (POINTS_PER_DOLLAR
-                is flat and tier-independent, see src/lib/rewards.ts). Open
-                question with the user, not resolved here — showing the true
-                rate rather than the unconfirmed screen figure. */}
+            {/* Resolved: the earn rate is a flat 1 pt/$1 (1%), independent of
+                Stitch's unconfirmed "6 pts/$1" figure — that question is
+                closed. What DOES vary by tier is a small earn-rate
+                multiplier on top of this base rate (see below), not a
+                replacement for it. */}
             <p className="text-label-md text-on-surface-variant">
-              {POINTS_PER_DOLLAR} pts / $1 spent
+              {POINTS_PER_DOLLAR} pt / $1{" "}
+              {currentTier && currentTier.multiplierPercent !== 100
+                ? `× ${(currentTier.multiplierPercent / 100).toFixed(2).replace(/\.?0+$/, "")}`
+                : ""}
             </p>
           </div>
         </div>
@@ -140,18 +145,27 @@ async function PointsTab({ userId }: { userId: string }) {
         )}
       </Card>
 
+      {/* Policy note (always shown) + a specific heads-up when something is
+          actually about to expire — see getRewards's expiringSoon. */}
+      <p className="mt-3 text-label-md text-on-surface-variant">
+        {PROGRAMME_NAME} expire 12 months after they&apos;re earned.
+        {expiringSoon
+          ? ` ${expiringSoon.points.toLocaleString()} pts expire on ${formatDayMonth(expiringSoon.earliestExpiresAt)} — redeem them before then.`
+          : ""}
+      </p>
+
       {/* Principle 1, visible progress: show WHICH payments earned the points,
           not just the total. Not part of the Stitch reference — kept from
-          this system's own earn-history requirement, just reskinned. Rendered
-          straight off the Transaction rows, no separate points ledger to
-          fall out of sync. */}
+          this system's own earn-history requirement, just reskinned. Reads
+          the ACTUAL awarded amount from PointLot, not a recompute off the
+          transaction amount — with a tier multiplier, those can differ. */}
       <div className="mt-8">
         <h2 className="mb-3 text-title-lg text-on-surface">Recent points earned</h2>
         {recentPointEvents.length === 0 ? (
           <EmptyState
             icon={<Icon name="rewards" size={22} />}
             title="No points earned yet"
-            description={`Pay with NETS and you'll earn ${POINTS_PER_DOLLAR} points for every S$1 — automatically.`}
+            description={`Pay with NETS and you'll earn ${PROGRAMME_NAME} automatically — S$1 = ${POINTS_PER_DOLLAR} pt, on payments of $2 or more.`}
           />
         ) : (
           <Card padded={false}>
@@ -173,11 +187,10 @@ async function PointsTab({ userId }: { userId: string }) {
 
       {/* Loyalty Tiers — bento grid per nets_rewards/screen.png. Range labels
           ("X-Y payments") are derived from the real seeded thresholds, not
-          copied from the screen's example numbers. Tier NAMES also come
-          straight from the DB (seed.ts names the entry tier "Bronze"; the
-          reference screen calls it "Member") — real data wins over the
-          mockup's copy, same principle as the points-rate figure above,
-          though this one's cosmetic rather than a false earn-rate claim. */}
+          copied from the screen's example numbers. Tier names now match the
+          Stitch reference exactly ("Member" for the entry tier) — the task
+          that resized these thresholds also renamed Bronze -> Member, which
+          happens to resolve the naming mismatch flagged in an earlier pass. */}
       <div className="mt-8">
         <h2 className="mb-3 text-title-lg text-on-surface">Loyalty Tiers</h2>
         <div className="grid grid-cols-2 gap-3">
@@ -200,13 +213,16 @@ async function PointsTab({ userId }: { userId: string }) {
                 {isCurrent ? (
                   <Icon name="check-circle" size={20} className="absolute right-3 top-3 text-gold-tier" />
                 ) : null}
-                <p
-                  className={
-                    "text-body-lg font-semibold " + (isCurrent ? "text-gold-tier" : "text-on-surface")
-                  }
-                >
-                  {tier.name}
-                </p>
+                <div>
+                  <p
+                    className={
+                      "text-body-lg font-semibold " + (isCurrent ? "text-gold-tier" : "text-on-surface")
+                    }
+                  >
+                    {tier.name}
+                  </p>
+                  <p className="mt-0.5 text-label-md text-on-surface-variant">{tier.perk}</p>
+                </div>
                 <p className="text-label-md text-on-surface-variant">{range} payments</p>
               </div>
             );
@@ -238,7 +254,9 @@ async function PointsTab({ userId }: { userId: string }) {
         </div>
       ) : null}
 
-      {/* Tangible rewards read as more motivating than an equivalent cashback %. */}
+      {/* Tangible rewards read as more motivating than an equivalent cashback %
+          — except cashback itself, which is deliberately plain: it's the
+          "just give me the honest rate in cash" option, not a persuasion play. */}
       <div className="mt-8">
         <h2 className="mb-3 text-title-lg text-on-surface">Redeem Rewards</h2>
         {catalogue.length === 0 ? (
@@ -251,6 +269,7 @@ async function PointsTab({ userId }: { userId: string }) {
           <div className="flex flex-col gap-3">
             {catalogue.map((reward) => {
               const affordable = points >= reward.pointCost;
+              const isCashback = reward.category === "cashback";
               return (
                 <Card
                   key={reward.id}
@@ -263,6 +282,7 @@ async function PointsTab({ userId }: { userId: string }) {
                     <p className="text-body-lg font-semibold text-on-surface">{reward.name}</p>
                     <p className="mt-0.5 text-body-md font-medium text-primary">
                       {reward.pointCost.toLocaleString()} pts
+                      {isCashback ? ` → ${formatMoney(cashbackCentsForPoints(reward.pointCost))} credited` : ""}
                     </p>
                   </div>
                   <div className="w-32 shrink-0">

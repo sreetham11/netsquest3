@@ -100,7 +100,12 @@ function startOfThisCalendarMonth(): Date {
 // letting callers fold the earn into a larger atomic write.
 type NetsPaymentClient = Pick<PrismaClient, "account" | "transaction" | "rewardTier" | "pointLot">;
 
-export type TierLike = { name: string; txnCountNeeded: number; multiplierPercent: number };
+// multiplierPercent is optional on the type (not on real RewardTier rows,
+// which always have it via the schema default) specifically so callers that
+// predate the multiplier — src/app/preview/*, out of scope for this pass —
+// can still pass their existing tier-like objects without a type error.
+// Every real read of it already falls back with `?? 100`.
+export type TierLike = { name: string; txnCountNeeded: number; multiplierPercent?: number };
 
 // Tier state for a given monthly NETS-payment count, recomputed from scratch on
 // every render — no tier is ever stored on the account, so it can't go stale

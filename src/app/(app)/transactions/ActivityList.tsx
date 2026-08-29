@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/Card";
 import { ListRow } from "@/components/ui/ListRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/Icon";
 import { formatDate, formatSignedMoney } from "@/lib/format";
 import { txnLeadingIcon, amountTone, txnValue } from "@/lib/txn";
-import { NETS_PAYMENT_TYPES } from "@/lib/netsPaymentTypes";
+import { NETS_PAYMENT_TYPES, isNetsPaymentType } from "@/lib/netsPaymentTypes";
 
 type Txn = {
   id: string;
@@ -17,6 +17,7 @@ type Txn = {
   type: string;
   country: string | null;
   createdAt: Date;
+  refundedAt?: Date | null;
 };
 
 // Client-side only — no new Prisma query. Filters the SAME txns array the
@@ -30,7 +31,24 @@ const FILTERS = [
   { key: "rewards", label: "Rewards", test: (t: Txn) => t.type === "REWARD" },
 ] as const;
 
-export function ActivityList({ txns, currency }: { txns: Txn[]; currency: string }) {
+export function ActivityList({
+  txns,
+  currency,
+  renderRefundAction,
+}: {
+  txns: Txn[];
+  currency: string;
+  // Opt-in render prop rather than this file importing RefundButton (and
+  // transitively actions.ts -> prisma.ts) directly — this component is
+  // reused as-is by src/app/preview/activity (out of scope for this task,
+  // explicitly not to be touched), which was specifically built to have NO
+  // prisma/supabase dependency anywhere in its tree. Next.js's server-action
+  // bundling would likely make a direct import harmless in practice, but
+  // there's no reason to bet that isolation guarantee on "likely" when a
+  // prop avoids the question entirely. The real /transactions page passes
+  // this; the preview page doesn't, so nothing renders there.
+  renderRefundAction?: (transactionId: string) => ReactNode;
+}) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("all");
 
   const filtered = useMemo(() => {
@@ -87,17 +105,27 @@ export function ActivityList({ txns, currency }: { txns: Txn[]; currency: string
               </h4>
               <Card padded={false}>
                 <div className="divide-y divide-border-light px-stack-md">
-                  {rows.map((t) => (
-                    <ListRow
-                      key={t.id}
-                      leading={<Icon name={txnLeadingIcon(t.type, t.amountCents)} size={18} />}
-                      leadingTone={t.amountCents > 0 ? "success" : "primary"}
-                      title={t.description}
-                      subtitle={`${t.category}${t.country ? ` · ${t.country}` : ""}`}
-                      value={txnValue(t.type, t.amountCents, formatSignedMoney(t.amountCents, currency))}
-                      valueTone={amountTone(t.type, t.amountCents)}
-                    />
-                  ))}
+                  {rows.map((t) => {
+                    // Refundable: a real NETS payment (not a top-up/transfer/
+                    // etc — isNetsPaymentType already excludes those), a
+                    // debit, and not already refunded.
+                    const refundable = isNetsPaymentType(t.type) && t.amountCents < 0 && !t.refundedAt;
+                    return (
+                      <div key={t.id}>
+                        <ListRow
+                          leading={<Icon name={txnLeadingIcon(t.type, t.amountCents)} size={18} />}
+                          leadingTone={t.amountCents > 0 ? "success" : "primary"}
+                          title={t.description}
+                          subtitle={`${t.category}${t.country ? ` · ${t.country}` : ""}`}
+                          value={txnValue(t.type, t.amountCents, formatSignedMoney(t.amountCents, currency))}
+                          valueTone={amountTone(t.type, t.amountCents)}
+                        />
+                        {refundable && renderRefundAction ? (
+                          <div className="flex justify-end pb-2">{renderRefundAction(t.id)}</div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               </Card>
             </div>

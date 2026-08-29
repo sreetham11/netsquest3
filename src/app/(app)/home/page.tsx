@@ -18,7 +18,7 @@ import { DonutChart, type DonutSegment } from "@/components/ui/DonutChart";
 import { Icon } from "@/components/Icon";
 import { formatMoney, formatSignedMoney, formatAmount, formatDayMonth } from "@/lib/format";
 import { txnLeadingIcon, amountTone, txnValue } from "@/lib/txn";
-import { POINTS_PER_DOLLAR, resolveTierProgress } from "@/lib/rewards";
+import { PROGRAMME_NAME, POINTS_PER_DOLLAR, resolveTierProgress } from "@/lib/rewards";
 import { topUp } from "../actions";
 
 // Rank-ordered so the biggest category reads as the most confident blue,
@@ -215,7 +215,7 @@ export default async function HomePage() {
               <Card className="flex flex-col justify-between">
                 <div>
                   <p className="text-label-md uppercase tracking-widest text-on-surface-variant">
-                    Points Balance
+                    {PROGRAMME_NAME} Balance
                   </p>
                   <p className="mt-2 text-headline-lg text-primary">
                     {rewards.points.toLocaleString()}
@@ -252,14 +252,15 @@ export default async function HomePage() {
                     {atTopTier ? "Top tier unlocked." : "Tiers aren't set up yet."}
                   </p>
                 )}
-                {/* Real earn rate, not Stitch's "6 points per $1" — this account
-                    has no tier-based point multiplier (POINTS_PER_DOLLAR is a
-                    flat, tier-independent rate; see src/lib/rewards.ts). Open
-                    question with the user on whether a multiplier should exist
-                    at all — not implementing one here, showing the true rate
-                    instead of the unconfirmed screen figure. */}
+                {/* Resolved: the earn rate is a flat 1 pt/$1 (1%), independent
+                    of Stitch's unconfirmed "6 points per $1" figure. Tiers DO
+                    carry a small multiplier on top of this base rate (see
+                    RewardTier.multiplierPercent) — shown when it's not 1x. */}
                 <p className="mt-1 text-label-md font-bold text-gold-tier">
-                  {POINTS_PER_DOLLAR} points per $1 spent
+                  {POINTS_PER_DOLLAR} pt per $1 spent
+                  {currentTier && currentTier.multiplierPercent !== 100
+                    ? ` (${currentTier.name}: ${(currentTier.multiplierPercent / 100).toFixed(2).replace(/\.?0+$/, "")}x)`
+                    : ""}
                 </p>
               </Card>
             </div>

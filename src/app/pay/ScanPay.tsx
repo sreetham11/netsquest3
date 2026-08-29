@@ -52,20 +52,26 @@ export function ScanPay() {
 
     return (
       <div className="flex min-h-screen flex-col bg-background">
-        <header className="flex items-center gap-2 px-margin-mobile py-4">
-          <button
-            type="button"
-            onClick={() => setStep("scan")}
-            aria-label="Back to scan"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-on-surface hover:bg-surface-container"
-          >
-            <Icon name="chevron-left" size={22} />
-          </button>
-          <h1 className="text-headline-md text-on-surface">Confirm payment</h1>
-        </header>
+        {/* Same mx-auto/max-w-3xl containment AppShell's own <main> uses for
+            every (app) route — this page lives outside that layout (see the
+            comment below), so it isn't inherited automatically, but the
+            constraint itself is the same one, not a new approach. Without
+            it this form stretched full-bleed on desktop. */}
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
+          <header className="flex items-center gap-2 px-margin-mobile py-4">
+            <button
+              type="button"
+              onClick={() => setStep("scan")}
+              aria-label="Back to scan"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-on-surface hover:bg-surface-container"
+            >
+              <Icon name="chevron-left" size={22} />
+            </button>
+            <h1 className="text-headline-md text-on-surface">Confirm payment</h1>
+          </header>
 
-        <form action={formAction} className="flex flex-1 flex-col gap-stack-md px-margin-mobile pb-24">
-          <input type="hidden" name="category" value={category} />
+          <form action={formAction} className="flex flex-1 flex-col gap-stack-md px-margin-mobile pb-24 sm:max-w-md">
+            <input type="hidden" name="category" value={category} />
 
           <label className="flex flex-col gap-1.5">
             <span className="text-body-md font-medium text-on-surface">Paying</span>
@@ -117,16 +123,17 @@ export function ScanPay() {
             </div>
           </label>
 
-          {state?.error ? <p className="text-body-md text-error">{state.error}</p> : null}
+            {state?.error ? <p className="text-body-md text-error">{state.error}</p> : null}
 
-          <button
-            type="submit"
-            disabled={!canSubmit || pending}
-            className="mt-auto flex min-h-14 items-center justify-center rounded-lg bg-gradient-to-r from-nets-blue-gradient-start to-primary text-title-lg font-bold text-on-primary disabled:opacity-60"
-          >
-            {pending ? "Paying…" : "Confirm & Pay"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={!canSubmit || pending}
+              className="mt-auto flex min-h-14 items-center justify-center rounded-lg bg-gradient-to-r from-nets-blue-gradient-start to-primary text-title-lg font-bold text-on-primary disabled:opacity-60"
+            >
+              {pending ? "Paying…" : "Confirm & Pay"}
+            </button>
+          </form>
+        </div>
         <BottomNav />
       </div>
     );
@@ -136,68 +143,75 @@ export function ScanPay() {
     <div className="flex min-h-screen flex-col bg-inverse-surface text-inverse-on-surface">
       {/* Custom top chrome, per scan_pay/screen.png — the standard AppShell
           header (brand + sign out) doesn't fit a full-bleed dark scanner
-          view, so this page renders outside (app)/ and builds its own. */}
-      <header className="flex items-center justify-between px-margin-mobile py-4">
-        <Link
-          href="/home"
-          aria-label="Back to Home"
-          className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10"
-        >
-          <Icon name="chevron-left" size={22} />
-        </Link>
-        <h1 className="text-headline-md">Scan &amp; Pay</h1>
-        {/* Inert — no help content system exists yet, same treatment as
-            Activity's Export PDF/Filters buttons in the earlier phase. */}
-        <button
-          type="button"
-          aria-label="Help"
-          className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10"
-        >
-          <Icon name="help-circle" size={22} />
-        </button>
-      </header>
-
-      <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 pb-24">
-        <p className="text-center text-title-lg opacity-90">
-          Align QR code within the frame to scan
-        </p>
-        <div className="h-64 w-64 rounded-lg border border-white/20 bg-white/5" />
-        <div className="flex gap-4">
+          view, so this page renders outside (app)/ and builds its own. The
+          dark background stays full-bleed (looks intentional, matches the
+          screen), but the CONTENT gets the same mx-auto/max-w-3xl
+          containment every (app) route uses, via AppShell's <main> — without
+          it the viewfinder and merchant sheet stretched edge-to-edge on a
+          wide desktop window, which nothing here was ever designed for. */}
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
+        <header className="flex items-center justify-between px-margin-mobile py-4">
+          <Link
+            href="/home"
+            aria-label="Back to Home"
+            className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10"
+          >
+            <Icon name="chevron-left" size={22} />
+          </Link>
+          <h1 className="text-headline-md">Scan &amp; Pay</h1>
+          {/* Inert — no help content system exists yet, same treatment as
+              Activity's Export PDF/Filters buttons in the earlier phase. */}
           <button
             type="button"
-            onClick={simulateUpload}
-            className="flex items-center gap-2 rounded-full bg-surface-container-lowest px-5 py-3 text-body-lg font-medium text-primary shadow-card"
+            aria-label="Help"
+            className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10"
           >
-            <Icon name="gallery" size={18} />
-            Upload QR
+            <Icon name="help-circle" size={22} />
           </button>
-          {/* Inert — no real camera to control. */}
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-full bg-surface-container-lowest px-5 py-3 text-body-lg font-medium text-primary shadow-card"
-          >
-            <Icon name="flashlight" size={18} />
-            Flashlight
-          </button>
-        </div>
-      </div>
+        </header>
 
-      <div className="rounded-t-xl bg-surface-container-lowest px-margin-mobile pb-24 pt-6 text-on-surface">
-        <h2 className="mb-4 text-title-lg">Recent Merchants</h2>
-        <div className="flex gap-6 overflow-x-auto pb-1">
-          {RECENT_MERCHANTS.map((m) => (
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 pb-24">
+          <p className="text-center text-title-lg opacity-90">
+            Align QR code within the frame to scan
+          </p>
+          <div className="h-64 w-64 rounded-lg border border-white/20 bg-white/5 sm:h-80 sm:w-80" />
+          <div className="flex gap-4">
             <button
-              key={m.name}
               type="button"
-              onClick={() => pickMerchant(m)}
-              className="flex shrink-0 flex-col items-center gap-2"
+              onClick={simulateUpload}
+              className="flex items-center gap-2 rounded-full bg-surface-container-lowest px-5 py-3 text-body-lg font-medium text-primary shadow-card"
             >
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Icon name={m.icon} size={24} />
-              </span>
-              <span className="text-label-md font-medium text-on-surface">{m.name}</span>
+              <Icon name="gallery" size={18} />
+              Upload QR
             </button>
-          ))}
+            {/* Inert — no real camera to control. */}
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded-full bg-surface-container-lowest px-5 py-3 text-body-lg font-medium text-primary shadow-card"
+            >
+              <Icon name="flashlight" size={18} />
+              Flashlight
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-t-xl bg-surface-container-lowest px-margin-mobile pb-24 pt-6 text-on-surface">
+          <h2 className="mb-4 text-title-lg">Recent Merchants</h2>
+          <div className="flex gap-6 overflow-x-auto pb-1">
+            {RECENT_MERCHANTS.map((m) => (
+              <button
+                key={m.name}
+                type="button"
+                onClick={() => pickMerchant(m)}
+                className="flex shrink-0 flex-col items-center gap-2"
+              >
+                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Icon name={m.icon} size={24} />
+                </span>
+                <span className="text-label-md font-medium text-on-surface">{m.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <BottomNav />

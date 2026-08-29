@@ -12,6 +12,7 @@ import { Icon } from "@/components/Icon";
 import { formatAmount, formatMoney } from "@/lib/format";
 import { categoryIcon } from "@/lib/categoryIcon";
 import { ActivityList } from "./ActivityList";
+import { RefundButton } from "./RefundButton";
 
 export default async function TransactionsPage() {
   const user = await requireUser();
@@ -78,7 +79,11 @@ export default async function TransactionsPage() {
             description="Your activity will appear here once you start spending or topping up."
           />
         ) : (
-          <ActivityList txns={txns} currency={currency} />
+          <ActivityList
+            txns={txns}
+            currency={currency}
+            renderRefundAction={(id) => <RefundButton transactionId={id} />}
+          />
         )}
         {/* No "View More Activity" button: getAllTransactions already returns
             the complete history (unchanged, unpaginated) — there's nothing
