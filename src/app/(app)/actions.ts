@@ -7,6 +7,8 @@ import { requireUser } from "@/lib/auth";
 import { recordNetsPayment, consumePointsFifo, cashbackCentsForPoints } from "@/lib/rewards";
 import { isNetsPaymentType } from "@/lib/netsPaymentTypes";
 import { startOfThisMonth } from "@/lib/data/queries";
+import { findAuthUserByExactEmail, getAuthUserEmail } from "@/lib/supabase/admin";
+import { displayNameFromEmail } from "@/lib/user";
 
 // All of these are SIMULATED money movements — they only write rows to Postgres
 // via Prisma. No real payment processing.
@@ -50,8 +52,12 @@ export async function topUp(formData: FormData) {
   revalidatePath("/transactions");
 }
 
-// Splits are instant and name-only — no invites, no real linked accounts, no
-// balance/points effect. "paid" is a status toggle only, not a real payment.
+// Splits are instant and name-only by default — no invites, no balance/
+// points effect. "paid" is a status toggle only, not a real payment. A
+// participant CAN optionally reference a real registered user (see
+// findRegisteredUserByEmail below) — that's a display-only link (a badge +
+// their real name), not a live request they get notified about; that's a
+// separate, much bigger feature explicitly out of scope here.
 //
 // Shaped as (prevState, formData) => State for useActionState, so the client
 // form (NewSplitForm) can tell success apart from validation failure and
@@ -70,7 +76,7 @@ export async function createSplit(
     return { ok: false };
   }
 
-  let participants: Array<{ name: string; shareAmountCents: number }>;
+  let participants: Array<{ name: string; shareAmountCents: number; userId?: string | null }>;
   try {
     participants = JSON.parse(String(formData.get("participants") ?? "[]"));
   } catch {
@@ -79,7 +85,11 @@ export async function createSplit(
   if (!Array.isArray(participants) || participants.length === 0) return { ok: false };
 
   const cleaned = participants
-    .map((p) => ({ name: String(p?.name ?? "").trim(), shareAmountCents: Math.round(Number(p?.shareAmountCents)) }))
+    .map((p) => ({
+      name: String(p?.name ?? "").trim(),
+      shareAmountCents: Math.round(Number(p?.shareAmountCents)),
+      userId: typeof p?.userId === "string" && p.userId.trim() ? p.userId.trim() : null,
+    }))
     .filter((p) => p.name && Number.isFinite(p.shareAmountCents) && p.shareAmountCents >= 0);
   if (cleaned.length === 0) return { ok: false };
 
@@ -88,18 +98,64 @@ export async function createSplit(
   const sum = cleaned.reduce((s, p) => s + p.shareAmountCents, 0);
   if (sum !== totalAmountCents) return { ok: false };
 
+  // Never trust a client-claimed userId at face value. Account existence is
+  // a cheap, reliable local proxy for "this is a real registered user" —
+  // every signup gets one via ensureUserData — without needing another
+  // Supabase Auth round-trip just to confirm existence. A claimed id that
+  // doesn't resolve to a real account silently falls back to a plain
+  // free-text participant rather than failing the whole split.
+  const claimedIds = [...new Set(cleaned.map((p) => p.userId).filter((id): id is string => id !== null))];
+  const validAccounts = claimedIds.length
+    ? await prisma.account.findMany({ where: { userId: { in: claimedIds } }, select: { userId: true } })
+    : [];
+  const validIds = new Set(validAccounts.map((a) => a.userId));
+
+  // For every claimed-and-validated userId, re-derive the display name from
+  // their real email server-side rather than trusting whatever name string
+  // arrived alongside the claim — otherwise a tampered request could pair a
+  // real account's badge with an arbitrary, misleading name.
+  const resolved = await Promise.all(
+    cleaned.map(async (p) => {
+      if (!p.userId || !validIds.has(p.userId)) return { ...p, userId: null };
+      const email = await getAuthUserEmail(p.userId);
+      return email ? { ...p, name: displayNameFromEmail(email) } : { ...p, userId: null };
+    }),
+  );
+
   await prisma.split.create({
     data: {
       ownerId: user.id,
       title,
       totalAmountCents,
       category,
-      participants: { create: cleaned.map((p) => ({ name: p.name, shareAmountCents: p.shareAmountCents })) },
+      participants: {
+        create: resolved.map((p) => ({ name: p.name, shareAmountCents: p.shareAmountCents, userId: p.userId })),
+      },
     },
   });
 
   revalidatePath("/split");
   return { ok: true };
+}
+
+// Strict exact-match lookup for Split's "who's splitting it" input — never a
+// partial/browsable search. Gating on a complete-looking email BEFORE
+// querying means typing a couple of characters can never be used to probe
+// for other users; only a fully-typed address that matches a real account
+// gets anything back, and even then only {userId, displayName}, never a list
+// or the raw email.
+export type UserLookupResult = { userId: string; displayName: string } | null;
+
+const COMPLETE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+export async function findRegisteredUserByEmail(rawEmail: string): Promise<UserLookupResult> {
+  await requireUser();
+  const email = rawEmail.trim().toLowerCase();
+  if (!COMPLETE_EMAIL.test(email)) return null;
+
+  const match = await findAuthUserByExactEmail(email);
+  if (!match) return null;
+  return { userId: match.id, displayName: displayNameFromEmail(match.email) };
 }
 
 export async function toggleSplitParticipantPaid(formData: FormData) {
@@ -445,6 +501,46 @@ export async function saveBudgetCap(
   });
 
   revalidatePath("/budget");
+  revalidatePath("/home");
+  return { ok: true };
+}
+
+// Threshold/amount are always saved (even while disabled), so re-enabling
+// later remembers the last configured values — only enforced strictly when
+// enabled is actually being turned on, since a disabled row's numbers are
+// inert. topupAmountCents must exceed thresholdCents: that's what guarantees
+// triggerAutoTopupIfNeeded's post-topup balance always clears the threshold,
+// so a single top-up can't immediately re-trigger itself.
+export type SaveAutoTopupState = { ok: boolean; error?: string } | null;
+
+export async function saveAutoTopupSettings(
+  _prev: SaveAutoTopupState,
+  formData: FormData,
+): Promise<SaveAutoTopupState> {
+  const user = await requireUser();
+  const enabled = formData.get("enabled") === "on";
+  const thresholdCents = Math.round((Number(formData.get("threshold")) || 0) * 100);
+  const topupAmountCents = Math.round((Number(formData.get("amount")) || 0) * 100);
+
+  if (enabled) {
+    if (!Number.isFinite(thresholdCents) || thresholdCents <= 0) {
+      return { ok: false, error: "Enter a threshold greater than $0." };
+    }
+    if (!Number.isFinite(topupAmountCents) || topupAmountCents <= thresholdCents) {
+      return { ok: false, error: "Top-up amount must be greater than the threshold." };
+    }
+  }
+
+  await prisma.account.update({
+    where: { userId: user.id },
+    data: {
+      autoTopupEnabled: enabled,
+      autoTopupThresholdCents: thresholdCents,
+      autoTopupAmountCents: topupAmountCents,
+    },
+  });
+
+  revalidatePath("/more/auto-topup");
   revalidatePath("/home");
   return { ok: true };
 }

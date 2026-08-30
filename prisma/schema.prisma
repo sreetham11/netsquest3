@@ -19,6 +19,16 @@ model Account {
   balanceCents Int      @default(0)
   currency     String   @default("SGD")
   rewardPoints Int      @default(0) // 1 pt per S$1 of NETS payment, tier multiplier applies — see src/lib/rewards.ts
+  // Auto top-up: single settings blob per account, not a separate table —
+  // there's exactly one of these per user (unlike RewardTier/BudgetCap/
+  // RecurringBill, which are genuinely multi-row), so it belongs alongside
+  // balanceCents/rewardPoints as scalar Account state. Threshold/amount are
+  // nullable rather than defaulting to 0: null means "never configured",
+  // distinct from a real (if unlikely) 0 value. See triggerAutoTopupIfNeeded
+  // in src/lib/autoTopup.ts for the trigger logic.
+  autoTopupEnabled        Boolean @default(false)
+  autoTopupThresholdCents Int?
+  autoTopupAmountCents    Int?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -80,6 +90,14 @@ model SplitParticipant {
   shareAmountCents Int
   paid             Boolean @default(false)
   split            Split   @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  // The Supabase auth user id this participant references, if they're a real
+  // registered user — same plain-string convention as every other userId in
+  // this schema (Account.userId, Transaction.userId, ...): auth users live
+  // in Supabase's managed schema, not modeled here, so this is an unrelated
+  // plain string, not a Prisma @relation. Null means free-text only (the
+  // original behavior) — most people someone splits a bill with won't be
+  // registered users, so this stays optional.
+  userId           String?
 
   @@index([splitId])
 }

@@ -1,36 +1,33 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { Card } from "@/components/ui/Card";
-import { PlaceholderPage } from "../PlaceholderPage";
+import { getAccount } from "@/lib/data/queries";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Icon } from "@/components/Icon";
+import { AutoTopupForm } from "./AutoTopupForm";
 
+// Real now — was one of PlaceholderPage's 7 no-design-yet sub-pages; this one
+// has real state (Account.autoTopup*) and a real trigger (recordNetsPayment
+// -> triggerAutoTopupIfNeeded), so it gets its own header markup instead of
+// PlaceholderPage's "doesn't have its own design yet" banner.
 export default async function AutoTopUpPage() {
-  await requireUser();
+  const user = await requireUser();
+  const account = await getAccount(user.id);
+
   return (
-    <PlaceholderPage
-      title="Auto Top-up"
-      description="Automatically top up your balance when it runs low."
-    >
-      <Card className="flex flex-col gap-stack-md opacity-60">
-        <label className="flex items-center justify-between">
-          <span className="text-body-lg font-medium text-on-surface">Enable Auto Top-up</span>
-          <input type="checkbox" disabled className="h-5 w-5 accent-primary" />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-body-md font-medium text-on-surface">Top up when balance falls below</span>
-          <input
-            disabled
-            placeholder="$20.00"
-            className="rounded-lg border border-border-light bg-surface-container-low px-3 py-2 text-body-lg text-on-surface"
-          />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-body-md font-medium text-on-surface">Top-up amount</span>
-          <input
-            disabled
-            placeholder="$50.00"
-            className="rounded-lg border border-border-light bg-surface-container-low px-3 py-2 text-body-lg text-on-surface"
-          />
-        </label>
-      </Card>
-    </PlaceholderPage>
+    <div>
+      <Link
+        href="/more"
+        className="mb-4 inline-flex items-center gap-1 text-body-md font-medium text-primary hover:underline"
+      >
+        <Icon name="chevron-left" size={16} />
+        More
+      </Link>
+      <PageHeader title="Auto Top-up" subtitle="Automatically top up your balance when it runs low." />
+      <AutoTopupForm
+        initialEnabled={account?.autoTopupEnabled ?? false}
+        initialThresholdCents={account?.autoTopupThresholdCents ?? null}
+        initialAmountCents={account?.autoTopupAmountCents ?? null}
+      />
+    </div>
   );
 }

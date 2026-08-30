@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/Icon";
 import { formatAmount, formatMoney } from "@/lib/format";
 import { categoryIcon } from "@/lib/categoryIcon";
+import { isNetsPaymentType } from "@/lib/netsPaymentTypes";
 import { ActivityList } from "./ActivityList";
 import { RefundButton } from "./RefundButton";
 
@@ -24,6 +25,17 @@ export default async function TransactionsPage() {
     getMonthlySpendByCategory(user.id),
   ]);
   const currency = account?.currency ?? "SGD";
+
+  // Pre-rendered here (server-side), not passed down as a callback — a
+  // function can't cross the Server->Client Component boundary (ActivityList
+  // is "use client"); only serializable data/JSX can. Refundable: a real
+  // NETS payment (not a top-up/transfer/etc — isNetsPaymentType already
+  // excludes those), a debit, and not already refunded.
+  const refundActionsById = Object.fromEntries(
+    txns
+      .filter((t) => isNetsPaymentType(t.type) && t.amountCents < 0 && !t.refundedAt)
+      .map((t) => [t.id, <RefundButton key={t.id} transactionId={t.id} />]),
+  );
 
   const since = startOfThisMonth();
   const monthLabel = since.toLocaleDateString("en-SG", { month: "long" });
@@ -79,11 +91,7 @@ export default async function TransactionsPage() {
             description="Your activity will appear here once you start spending or topping up."
           />
         ) : (
-          <ActivityList
-            txns={txns}
-            currency={currency}
-            renderRefundAction={(id) => <RefundButton transactionId={id} />}
-          />
+          <ActivityList txns={txns} currency={currency} refundActionsById={refundActionsById} />
         )}
         {/* No "View More Activity" button: getAllTransactions already returns
             the complete history (unchanged, unpaginated) — there's nothing

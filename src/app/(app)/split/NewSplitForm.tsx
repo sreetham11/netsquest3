@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/Icon";
 import { formatMoney } from "@/lib/format";
 import { DEMO_RECEIPT, type ParsedReceipt } from "@/lib/receipt";
-import { createSplit, type CreateSplitState } from "../actions";
+import { createSplit, findRegisteredUserByEmail, type CreateSplitState, type UserLookupResult } from "../actions";
 
 const CATEGORIES: Array<{ value: string; label: string; icon: IconName }> = [
   { value: "General", label: "General", icon: "split" },
@@ -74,6 +74,13 @@ export function NewSplitForm() {
   const [category, setCategory] = useState("General");
   const [names, setNames] = useState<string[]>([DEFAULT_NAME]);
   const [nameInput, setNameInput] = useState("");
+  // name -> the real userId it references, only present for linked
+  // participants — free-text names (the default/fallback path) never have
+  // an entry here. Keyed by the same display-name string `names` already
+  // uses everywhere else, so none of the existing name-keyed bookkeeping
+  // (customAmounts, itemAssignments, equal-share indexing) needs to change.
+  const [participantUserIds, setParticipantUserIds] = useState<Record<string, string>>({});
+  const [matchedUser, setMatchedUser] = useState<UserLookupResult>(null);
   const [method, setMethod] = useState<SplitMethod>("equal");
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   // Item id -> names assigned to it. Only meaningful in "items" method, and
@@ -98,12 +105,39 @@ export function NewSplitForm() {
     if (state?.ok) reset();
   }, [state]);
 
+  // Debounced strict lookup as the user types — findRegisteredUserByEmail
+  // itself refuses to match anything until the input looks like a complete
+  // email, so this only ever fires a real query once there's something
+  // worth checking, not on every keystroke of a short partial string.
+  useEffect(() => {
+    const trimmed = nameInput.trim();
+    // Empty input needs no state reset here — displayedMatch (derived below,
+    // during render) already treats blank input as "no match" without
+    // needing an effect-driven setState for that branch.
+    if (!trimmed) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const result = await findRegisteredUserByEmail(trimmed);
+      if (!cancelled) setMatchedUser(result);
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [nameInput]);
+  // Guards against showing a stale match left over from a previous, since-
+  // cleared input (e.g. right after addLinkedUser resets nameInput but the
+  // debounce timer for the old value hasn't been superseded by a render yet).
+  const displayedMatch = nameInput.trim() ? matchedUser : null;
+
   function reset() {
     setTitle("");
     setTotalAmount("");
     setCategory("General");
     setNames([DEFAULT_NAME]);
     setNameInput("");
+    setParticipantUserIds({});
+    setMatchedUser(null);
     setMethod("equal");
     setCustomAmounts({});
     setItemAssignments({});
@@ -176,6 +210,7 @@ export function NewSplitForm() {
         : method === "items"
           ? (itemSharesByPerson[name] ?? 0)
           : customCentsFor(name),
+    userId: participantUserIds[name] ?? null,
   }));
 
   const canSubmit =
@@ -194,10 +229,31 @@ export function NewSplitForm() {
     }
     setNames((prev) => [...prev, n]);
     setNameInput("");
+    setMatchedUser(null);
+  }
+
+  // Adds a real registered user found via the strict email match above —
+  // a separate, explicit action from the Enter-to-add free-text path, so
+  // typing a full email and pressing Enter still just adds it as plain text
+  // unless this suggestion is specifically clicked. Most participants won't
+  // be registered users, so free-text stays the default, unforced path.
+  function addLinkedUser(result: NonNullable<UserLookupResult>) {
+    if (!names.includes(result.displayName)) {
+      setNames((prev) => [...prev, result.displayName]);
+      setParticipantUserIds((prev) => ({ ...prev, [result.displayName]: result.userId }));
+    }
+    setNameInput("");
+    setMatchedUser(null);
   }
 
   function removeName(n: string) {
     setNames((prev) => prev.filter((x) => x !== n));
+    setParticipantUserIds((prev) => {
+      if (!(n in prev)) return prev;
+      const next = { ...prev };
+      delete next[n];
+      return next;
+    });
     // Purge from item assignments too, so a removed person doesn't stay
     // invisibly "assigned" to items and silently absorb a share of them.
     setItemAssignments((prev) =>
@@ -580,6 +636,15 @@ export function NewSplitForm() {
                       key={n}
                       className="inline-flex items-center gap-1 rounded-full bg-nets-blue-100 py-1 pl-3 pr-1.5 text-sm font-medium text-accent"
                     >
+                      {participantUserIds[n] ? (
+                        <Icon
+                          name="check-circle"
+                          size={12}
+                          className="text-accent"
+                          aria-hidden={false}
+                          aria-label="Registered user"
+                        />
+                      ) : null}
                       {n}
                       <button
                         type="button"
@@ -600,10 +665,22 @@ export function NewSplitForm() {
                         addName();
                       }
                     }}
-                    placeholder="Type a name, press Enter"
+                    placeholder="Type a name or email, press Enter"
                     className="min-w-[140px] flex-1 border-none bg-transparent px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-muted"
                   />
                 </div>
+                {/* Explicit, separate action from Enter-to-add — matching a
+                    real account never forces linking, it's just offered. */}
+                {displayedMatch ? (
+                  <button
+                    type="button"
+                    onClick={() => addLinkedUser(displayedMatch)}
+                    className="inline-flex w-fit items-center gap-1.5 rounded-full border border-accent bg-nets-blue-100/60 px-3 py-1.5 text-xs font-medium text-accent hover:bg-nets-blue-100"
+                  >
+                    <Icon name="check-circle" size={13} />
+                    Add {displayedMatch.displayName} as registered user
+                  </button>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -661,11 +738,20 @@ export function NewSplitForm() {
                                 type="button"
                                 onClick={() => toggleItemAssignee(item.id, n)}
                                 className={
-                                  assignees.includes(n)
+                                  "inline-flex items-center gap-1 " +
+                                  (assignees.includes(n)
                                     ? "rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-white"
-                                    : "rounded-full border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted"
+                                    : "rounded-full border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted")
                                 }
                               >
+                                {participantUserIds[n] ? (
+                                  <Icon
+                                    name="check-circle"
+                                    size={11}
+                                    aria-hidden={false}
+                                    aria-label="Registered user"
+                                  />
+                                ) : null}
                                 {n}
                               </button>
                             ))}
@@ -686,7 +772,18 @@ export function NewSplitForm() {
               <div className="divide-y divide-line rounded-button border border-line">
                 {names.map((n, i) => (
                   <div key={n} className="flex items-center justify-between px-3 py-2">
-                    <span className="text-sm text-ink">{n}</span>
+                    <span className="inline-flex items-center gap-1.5 text-sm text-ink">
+                      {n}
+                      {participantUserIds[n] ? (
+                        <Icon
+                          name="check-circle"
+                          size={12}
+                          className="text-accent"
+                          aria-hidden={false}
+                          aria-label="Registered user"
+                        />
+                      ) : null}
+                    </span>
                     {method === "equal" ? (
                       <span className="text-sm font-semibold text-ink">
                         {formatMoney(equalShares[i] ?? 0)}

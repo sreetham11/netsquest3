@@ -1,5 +1,6 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
+import { triggerAutoTopupIfNeeded } from "@/lib/autoTopup";
 // Re-exported so existing server-side imports of these from "@/lib/rewards"
 // keep working unchanged — see netsPaymentTypes.ts for why they moved.
 import { NETS_PAYMENT_TYPES, isNetsPaymentType, type NetsPaymentType } from "@/lib/netsPaymentTypes";
@@ -232,6 +233,14 @@ export async function recordNetsPayment(
       },
     });
   }
+
+  // Checked on the same client/transaction as the debit above, so a payment
+  // that drops the balance below the configured threshold and its resulting
+  // auto-topup commit (or roll back) together — see triggerAutoTopupIfNeeded
+  // for the double-fire/loop safety reasoning. This is the ONE real balance-
+  // decrementing call site in the app (split settlement has no balance
+  // effect), so hooking it here covers every current and future caller.
+  await triggerAutoTopupIfNeeded(client, payment.userId);
 
   return { transactionId: row.id, points };
 }

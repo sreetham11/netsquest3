@@ -96,7 +96,18 @@ export default async function SplitPage() {
                       <div key={p.id} className="flex items-center gap-3 py-3">
                         <Avatar name={p.name} index={i} size={32} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-ink">{p.name}</p>
+                          <p className="flex items-center gap-1.5 truncate text-sm font-medium text-ink">
+                            {p.name}
+                            {p.userId ? (
+                              <Icon
+                                name="check-circle"
+                                size={12}
+                                className="shrink-0 text-accent"
+                                aria-hidden={false}
+                                aria-label="Registered user"
+                              />
+                            ) : null}
+                          </p>
                           <p className="text-sm text-ink-muted">{formatMoney(p.shareAmountCents)}</p>
                         </div>
                         <form action={toggleSplitParticipantPaid}>

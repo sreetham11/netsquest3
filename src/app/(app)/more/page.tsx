@@ -4,6 +4,7 @@ import { logout } from "@/app/auth/actions";
 import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
 import { Icon, type IconName } from "@/components/Icon";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { displayNameFromEmail } from "@/lib/user";
 
 const CARD_ROWS: Array<{ href: string; label: string; icon: IconName }> = [
@@ -68,6 +69,25 @@ export default async function MorePage() {
                 <Icon name="chevron-right" size={20} className="text-outline-variant" />
               </Link>
             ))}
+          </div>
+        </Card>
+      </section>
+
+      <section>
+        <h3 className="mb-2 px-1 text-label-md font-semibold uppercase tracking-wide text-on-surface-variant">
+          Appearance
+        </h3>
+        <Card padded={false}>
+          <div className="px-stack-md">
+            <div className="flex items-center justify-between py-4">
+              <div className="flex items-center gap-4">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Icon name="moon" size={20} />
+                </span>
+                <span className="text-body-lg font-medium text-on-surface">Dark Mode</span>
+              </div>
+              <ThemeToggle />
+            </div>
           </div>
         </Card>
       </section>

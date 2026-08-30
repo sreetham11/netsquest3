@@ -49,7 +49,8 @@ export type IconName =
   | "wallet"
   | "circle-plus"
   | "minus"
-  | "card";
+  | "card"
+  | "moon";
 
 const paths: Record<IconName, React.ReactNode> = {
   home: <path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5" />,
@@ -315,6 +316,7 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M6.5 14h4" />
     </>
   ),
+  moon: <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />,
 };
 
 export function Icon({

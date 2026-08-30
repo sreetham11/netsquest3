@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: default Tailwind v4 dark: only follows OS
+   prefers-color-scheme. This makes `dark:` (and, more importantly, the
+   .dark selector below) respond to an explicit .dark class on <html>
+   instead, so the toggle actually controls it. No component currently uses
+   a dark: utility (see the .dark token block below for why that's the
+   deliberate approach here) — this is still the correct/current v4 setup
+   for class-based dark mode, kept as real infrastructure either way. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ============================================================================
    NETS Quest — Design Tokens  (NETS Revitalize, source of truth: see
    stitch_visual_design_system_foundation/nets_revitalize/DESIGN.md — full
@@ -172,6 +181,125 @@
      opacity)" for the Main Card; reused as the one card-elevation shadow
      app-wide (Tonal Layers + this single shadow, never stacked shadows). -- */
   --shadow-card: 0 2px 4px 0 rgb(25 27 34 / 0.05);
+}
+
+/* ============================================================================
+   Dark theme — redefines the SAME --color-* custom properties above under a
+   .dark scope. Every component already renders via named tokens (bg-surface,
+   text-on-surface, …) rather than hardcoded colors, and Tailwind v4's @theme
+   block emits these as real CSS custom properties (not inlined literals) —
+   utilities compile to e.g. `background-color: var(--color-primary)`. That's
+   why this works with zero component changes: redefine the variable here,
+   every utility using it resolves to the new value automatically.
+
+   Structure follows M3's real light<->dark relationships, not a blind invert:
+     - Surface "container" elevation direction REVERSES (M3 dark theme rule):
+       light gets progressively darker/more-tinted from lowest->highest
+       (elevation = greyer); dark gets progressively LIGHTER from
+       lowest->highest (elevation = brighter, like light hitting a raised
+       surface). container-lowest is near-black here for exactly that reason.
+     - The error family uses the textbook M3 dark<->light SWAP (dark.X uses
+       light's onX-ish tone and vice versa: dark.errorContainer =
+       light.onErrorContainer, dark.onErrorContainer = light.errorContainer)
+       — kept, since `error` is only ever used as plain text color here (no
+       gradient dual-use), so the textbook swap has no side effects.
+     - inverse-surface/inverse-on-surface are ALSO deliberately NOT redefined
+       here, despite being the textbook M3 swap candidates: their only two
+       consumers app-wide (ScanPay.tsx and preview/pay's PreviewScanPay.tsx)
+       use them to build one FIXED always-dark scanner viewfinder background,
+       not a true theme-relative "inverse" surface (this app has no toasts/
+       snackbars, the actual M3 use case for that role) — swapping them
+       would flip the scanner to a light background in dark mode, breaking
+       the one thing they're actually used for. Confirmed via a real
+       verification run: this was caught as an actual regression, not a
+       hypothetical one, before being reverted to theme-invariant.
+     - primary/secondary/tertiary's `*-fixed*` roles are DELIBERATELY NOT
+       redefined here: M3 "fixed" tones are specified to stay constant across
+       themes (that's their entire purpose — a brand chip that shouldn't
+       flip), so omitting them is correct, not an oversight.
+     - `primary` itself is the one deliberate DEVIATION from the textbook M3
+       swap (which would lighten it to a pale ~#aec6ff): this app uses
+       `primary` as both a text/icon accent color AND a gradient endpoint
+       paired with nets-blue-gradient-start/-end on every primary CTA
+       (`bg-gradient-to-r from-nets-blue-gradient-start to-primary` — Home's
+       Scan & Pay, ScanPay's Confirm & Pay, BottomNav's FAB, Pay Success's
+       Done button). A pale pastel swap would read as a broken/washed-out
+       gradient on every one of those. Using a brighter but still clearly
+       saturated NETS blue keeps the gradient coherent AND keeps text-primary
+       legible against the new dark backgrounds — the actual design-judgment
+       call the token swap alone can't make for us.
+     - nets-blue-gradient-start/-end stay close to their light values on
+       purpose: hero/brand CTAs are meant to stay vivid brand color against a
+       dark shell rather than desaturate like the rest of the palette — this
+       is also why Home's bespoke hero "Main Card" needs no separate dark
+       treatment (checked): its background is these two gradient tokens, its
+       text is text-on-primary (white, theme-invariant) and a small
+       bg-success-green dot — all already covered by tokens defined here.
+   ============================================================================ */
+.dark {
+  /* --- Surfaces ------------------------------------------------------------ */
+  --color-surface: #121317;
+  --color-surface-dim: #121317;
+  --color-surface-bright: #383a41;
+  --color-surface-container-lowest: #0c0d10;
+  --color-surface-container-low: #1a1c22;
+  --color-surface-container: #1e2027;
+  --color-surface-container-high: #282a31;
+  --color-surface-container-highest: #33353c;
+  --color-surface-variant: #45464f;
+  --color-on-surface: #e3e2ea;
+  --color-on-surface-variant: #c5c6d0;
+  /* inverse-surface / inverse-on-surface: intentionally unchanged, see note
+     above — ScanPay's scanner background needs to stay dark in both themes. */
+  --color-outline: #8d909c;
+  --color-outline-variant: #45464f;
+  --color-surface-tint: #4d8dfd; /* = dark primary */
+  --color-background: #121317;
+  --color-on-background: #e3e2ea;
+
+  /* --- Primary: NETS Blue — see the dual-use note above for why this isn't
+     the textbook M3 pale-lighten swap. */
+  --color-primary: #4d8dfd;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #004396;
+  --color-on-primary-container: #d8e2ff;
+  --color-inverse-primary: #003c87;
+  /* primary-fixed / primary-fixed-dim / on-primary-fixed /
+     on-primary-fixed-variant: intentionally unchanged, see note above. */
+
+  /* --- Secondary: NETS Red — text-only usage in this app, so the textbook
+     M3 swap applies cleanly. */
+  --color-secondary: #ffb3ad;
+  --color-on-secondary: #5c0007;
+  --color-secondary-container: #930011;
+  --color-on-secondary-container: #ffdad6;
+
+  /* --- Tertiary ------------------------------------------------------------ */
+  --color-tertiary: #ffb596;
+  --color-on-tertiary: #401200;
+  --color-tertiary-container: #7d2d00;
+  --color-on-tertiary-container: #ffdbcd;
+
+  /* --- Error — standard M3 dark baseline tones ------------------------------ */
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a; /* = light's on-error-container (swap) */
+  --color-on-error-container: #ffdad6; /* = light's error-container (swap) */
+
+  /* --- NETS-specific extras -------------------------------------------------
+     nets-blue-gradient-start/-end deliberately near-unchanged — see note
+     above. nets-blue-dark (Avatar tones, ProgressBar/Ring "accent-strong")
+     is lightened since the light value (#003a80) would nearly disappear
+     against these dark surfaces. success-green and gold-tier are nudged
+     brighter for the same reason — still unmistakably the same hue, just
+     enough lift to stay clearly legible/distinguishable on a dark ground. */
+  --color-nets-blue-dark: #6b9fe8;
+  --color-nets-blue-gradient-start: #0066ff;
+  --color-nets-blue-gradient-end: #002d66;
+  --color-surface-grey: #23252c;
+  --color-border-light: #33353c;
+  --color-success-green: #34d399;
+  --color-gold-tier: #e8c766;
 }
 
 /* Page canvas: DESIGN.md's prose calls `surface-grey` the app background, but

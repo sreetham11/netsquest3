@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/Icon";
 import { formatDate, formatSignedMoney } from "@/lib/format";
 import { txnLeadingIcon, amountTone, txnValue } from "@/lib/txn";
-import { NETS_PAYMENT_TYPES, isNetsPaymentType } from "@/lib/netsPaymentTypes";
+import { NETS_PAYMENT_TYPES } from "@/lib/netsPaymentTypes";
 
 type Txn = {
   id: string;
@@ -17,7 +17,6 @@ type Txn = {
   type: string;
   country: string | null;
   createdAt: Date;
-  refundedAt?: Date | null;
 };
 
 // Client-side only — no new Prisma query. Filters the SAME txns array the
@@ -34,20 +33,23 @@ const FILTERS = [
 export function ActivityList({
   txns,
   currency,
-  renderRefundAction,
+  refundActionsById,
 }: {
   txns: Txn[];
   currency: string;
-  // Opt-in render prop rather than this file importing RefundButton (and
-  // transitively actions.ts -> prisma.ts) directly — this component is
-  // reused as-is by src/app/preview/activity (out of scope for this task,
-  // explicitly not to be touched), which was specifically built to have NO
-  // prisma/supabase dependency anywhere in its tree. Next.js's server-action
-  // bundling would likely make a direct import harmless in practice, but
-  // there's no reason to bet that isolation guarantee on "likely" when a
-  // prop avoids the question entirely. The real /transactions page passes
-  // this; the preview page doesn't, so nothing renders there.
-  renderRefundAction?: (transactionId: string) => ReactNode;
+  // Pre-rendered elements keyed by transaction id, NOT a callback — a plain
+  // function can't cross the Server->Client Component boundary (React Flight
+  // only serializes Server Actions and data/JSX, not arbitrary closures;
+  // passing one crashes with "Functions cannot be passed directly to Client
+  // Components" the moment this page is actually rendered with real data,
+  // which is exactly what happened in production). Pre-rendering the
+  // <RefundButton> elements server-side and passing the finished JSX avoids
+  // that entirely, while still keeping this file free of any RefundButton/
+  // actions.ts/prisma import — it never needs to know how a refund action is
+  // built, just where to place one if the caller supplied it. The real
+  // /transactions page passes this; src/app/preview/activity (out of scope,
+  // explicitly not to be touched) doesn't, so nothing renders there.
+  refundActionsById?: Record<string, ReactNode>;
 }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("all");
 
@@ -106,10 +108,7 @@ export function ActivityList({
               <Card padded={false}>
                 <div className="divide-y divide-border-light px-stack-md">
                   {rows.map((t) => {
-                    // Refundable: a real NETS payment (not a top-up/transfer/
-                    // etc — isNetsPaymentType already excludes those), a
-                    // debit, and not already refunded.
-                    const refundable = isNetsPaymentType(t.type) && t.amountCents < 0 && !t.refundedAt;
+                    const refundAction = refundActionsById?.[t.id];
                     return (
                       <div key={t.id}>
                         <ListRow
@@ -120,9 +119,7 @@ export function ActivityList({
                           value={txnValue(t.type, t.amountCents, formatSignedMoney(t.amountCents, currency))}
                           valueTone={amountTone(t.type, t.amountCents)}
                         />
-                        {refundable && renderRefundAction ? (
-                          <div className="flex justify-end pb-2">{renderRefundAction(t.id)}</div>
-                        ) : null}
+                        {refundAction ? <div className="flex justify-end pb-2">{refundAction}</div> : null}
                       </div>
                     );
                   })}

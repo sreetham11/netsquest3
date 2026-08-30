@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { sweepExpiredPoints } from "@/lib/rewards";
+import { NETS_PAYMENT_TYPES } from "@/lib/netsPaymentTypes";
 
 export function startOfThisMonth(): Date {
   const now = new Date();
@@ -202,6 +203,13 @@ export async function getRecentSpendByCategory(
     by: ["category"],
     where: {
       userId,
+      // Real spend only — a negative amountCents alone doesn't guarantee
+      // that (a TOPUP/etc shouldn't ever be negative, but if one is, or any
+      // other non-payment type ends up negative, it must not be counted as
+      // spending here). Same "counts as real spend" set used throughout the
+      // rest of this codebase (ActivityList's Payments filter, the daily-
+      // merchant cap in recordNetsPayment), not a new, one-off condition.
+      type: { in: [...NETS_PAYMENT_TYPES] },
       amountCents: { lt: 0 },
       createdAt: { gte: since },
     },
