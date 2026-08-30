@@ -14,13 +14,14 @@ function daysAgo(n: number): Date {
   return d;
 }
 
-// Global demo catalogue — fixed, not per-user. Seeded once; safe to call on
-// every signup because it's keyed on the unique `name` and short-circuits once
-// rows exist.
+// Global demo catalogue — fixed, not per-user. Safe to call on every signup:
+// `skipDuplicates` (keyed on the unique `name`) is what makes this
+// idempotent, not a row-count check — a count-gated early return would skip
+// the insert attempt entirely on a database that already has SOME rows,
+// silently never adding catalogue items introduced later (this bit us once:
+// the cashback rewards below never reached a pre-existing database until
+// this comment was written).
 export async function ensureRewardCatalogue() {
-  const count = await prisma.reward.count();
-  if (count > 0) return;
-
   await prisma.reward.createMany({
     data: [
       { name: "Coffee", pointCost: 500, category: "coffee", sortOrder: 0 },
@@ -37,12 +38,12 @@ export async function ensureRewardCatalogue() {
   });
 }
 
-// Merchant cashback marketplace — global, not per-user, seeded once. Static
-// demo content, not a live merchant API.
+// Merchant cashback marketplace — global, not per-user. Static demo content,
+// not a live merchant API. Idempotent via skipDuplicates (keyed on the
+// unique `merchant`), same reasoning as ensureRewardCatalogue above — no
+// count-gated early return, so a future addition to this list still reaches
+// a database that already has some deals in it.
 export async function ensureMerchantDeals() {
-  const count = await prisma.merchantDeal.count();
-  if (count > 0) return;
-
   await prisma.merchantDeal.createMany({
     data: [
       { merchant: "Koufu", category: "food", offer: "10% off", sortOrder: 0 },
