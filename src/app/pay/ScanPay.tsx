@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { useActionState } from "react";
+import { useState, useActionState, useEffect, useRef } from "react";
 import Link from "next/link";
+import QrScanner from "qr-scanner";
 import { Icon, type IconName } from "@/components/Icon";
 import { BottomNav } from "@/components/BottomNav";
 import { makePayment, type MakePaymentState } from "@/app/(app)/actions";
+import { parseNetsQrPayload } from "@/lib/qrPayload";
+
+// Category values a scanned QR's payload might name — snapped to one of the
+// confirm screen's own <select> options (falling back to "Shopping") so a
+// scanned category always matches a real option instead of silently
+// desyncing the controlled <select> from its value.
+const KNOWN_CATEGORIES = ["Food", "Groceries", "Shopping", "Transport", "Entertainment", "Utilities", "Other"];
+
+type CameraStatus = "checking" | "active" | "unavailable";
 
 // Fixed demo list, not real merchant-history tracking — same "static demo
 // catalogue" pattern as MerchantDeal elsewhere in this app. Categories stay
@@ -31,20 +40,127 @@ export function ScanPay() {
     null,
   );
 
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const scannerRef = useRef<QrScanner | null>(null);
+  const [cameraStatus, setCameraStatus] = useState<CameraStatus>("checking");
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [hasFlash, setHasFlash] = useState(false);
+  const [flashOn, setFlashOn] = useState(false);
+
   function pickMerchant(m: (typeof RECENT_MERCHANTS)[number]) {
     setMerchant(m.name);
     setCategory(m.category);
     setStep("confirm");
   }
 
-  // No real QR decoding (out of scope for the demo) — "scanning" just moves
-  // to the confirm step with an empty, editable merchant field instead of
-  // pretending to have read one from an image.
+  // Upload QR stays a manual-entry fallback, same as before real camera
+  // scanning existed — decoding a QR out of an uploaded gallery image is a
+  // further step beyond live camera scanning and isn't part of this pass.
+  // This just moves to the confirm step with an empty, editable merchant
+  // field, so it also works as a no-camera / permission-denied escape hatch.
   function simulateUpload() {
     setMerchant("");
     setCategory("Shopping");
     setStep("confirm");
   }
+
+  // Fires on ANY successfully-decoded QR code, regardless of content — a
+  // wifi QR, a URL, a random poster code all decode fine as far as the
+  // camera/scanner is concerned. parseNetsQrPayload is what actually decides
+  // "is this ours", so garbage payloads fail here, not silently downstream.
+  function handleDecode(raw: string) {
+    scannerRef.current?.stop();
+    const payload = parseNetsQrPayload(raw);
+    if (!payload) {
+      setScanError("This doesn't look like a NETS QR code.");
+      return;
+    }
+    setMerchant(payload.merchant);
+    setCategory(KNOWN_CATEGORIES.includes(payload.category) ? payload.category : "Shopping");
+    setAmount((payload.amountCents / 100).toFixed(2));
+    setStep("confirm");
+  }
+
+  // Explicit reset (rather than relying on the scan effect to clean up stale
+  // state) — without it, leaving and re-entering the scan step would briefly
+  // show the previous visit's error message or camera status before the new
+  // scanner finishes (re)initializing.
+  function backToScan() {
+    setCameraStatus("checking");
+    setScanError(null);
+    setHasFlash(false);
+    setFlashOn(false);
+    setStep("scan");
+  }
+
+  function retryScan() {
+    setScanError(null);
+    scannerRef.current?.start().catch(() => setCameraStatus("unavailable"));
+  }
+
+  async function toggleFlash() {
+    try {
+      await scannerRef.current?.toggleFlash();
+      setFlashOn(scannerRef.current?.isFlashOn() ?? false);
+    } catch {
+      // Flash toggle can fail on some devices mid-session — not worth
+      // surfacing as an error, the button just stays in its current state.
+    }
+  }
+
+  // Runs only while the scan step is showing, so the camera stream is never
+  // held open behind the confirm form or after leaving this page — start on
+  // mount, and the cleanup (return below) stops+destroys on every exit path
+  // (step change or unmount) so nothing leaks the camera stream.
+  useEffect(() => {
+    if (step !== "scan") return;
+    let cancelled = false;
+    let scanner: QrScanner | null = null;
+
+    async function init() {
+      const cameraAvailable = await QrScanner.hasCamera().catch(() => false);
+      if (cancelled) return;
+      if (!cameraAvailable || !videoRef.current) {
+        setCameraStatus("unavailable");
+        return;
+      }
+
+      scanner = new QrScanner(videoRef.current, (result) => handleDecode(result.data), {
+        // Fires continuously whenever no code is in frame — expected noise,
+        // not a real failure, so this stays a no-op.
+        onDecodeError: () => {},
+        highlightScanRegion: true,
+        highlightCodeOutline: true,
+        preferredCamera: "environment",
+      });
+      scannerRef.current = scanner;
+
+      try {
+        await scanner.start();
+        if (cancelled) {
+          scanner.destroy();
+          return;
+        }
+        setCameraStatus("active");
+        const flash = await scanner.hasFlash().catch(() => false);
+        if (!cancelled) setHasFlash(flash);
+      } catch {
+        // getUserMedia rejected — permission denied, no camera hardware, or
+        // insecure context. Either way, fall back to the manual paths below
+        // rather than leaving a stuck "Starting camera…" screen.
+        if (!cancelled) setCameraStatus("unavailable");
+      }
+    }
+
+    void init();
+
+    return () => {
+      cancelled = true;
+      scanner?.stop();
+      scanner?.destroy();
+      scannerRef.current = null;
+    };
+  }, [step]);
 
   if (step === "confirm") {
     const amountCents = Math.round((Number(amount) || 0) * 100);
@@ -61,7 +177,7 @@ export function ScanPay() {
           <header className="flex items-center gap-2 px-margin-mobile py-4">
             <button
               type="button"
-              onClick={() => setStep("scan")}
+              onClick={backToScan}
               aria-label="Back to scan"
               className="flex h-10 w-10 items-center justify-center rounded-full text-on-surface hover:bg-surface-container"
             >
@@ -172,9 +288,48 @@ export function ScanPay() {
 
         <div className="flex flex-1 flex-col items-center justify-center gap-8 px-6 pb-24">
           <p className="text-center text-title-lg opacity-90">
-            Align QR code within the frame to scan
+            {cameraStatus === "unavailable"
+              ? "Camera unavailable — use Upload QR or pick a merchant below"
+              : "Align QR code within the frame to scan"}
           </p>
-          <div className="h-64 w-64 rounded-lg border border-white/20 bg-white/5 sm:h-80 sm:w-80" />
+          {/* Single stable <video> node across every camera state — qr-scanner
+              attaches the stream to this exact element, so it can't be
+              swapped for a different element per branch (which would break
+              the attachment). Visibility instead toggles via opacity, with
+              the "checking"/"unavailable"/error states layered on top. */}
+          <div className="relative h-64 w-64 overflow-hidden rounded-lg border border-white/20 bg-white/5 sm:h-80 sm:w-80">
+            <video
+              ref={videoRef}
+              muted
+              playsInline
+              className={
+                "absolute inset-0 h-full w-full object-cover " +
+                (cameraStatus === "active" ? "" : "opacity-0")
+              }
+            />
+            {cameraStatus === "checking" && (
+              <p className="absolute inset-0 flex items-center justify-center px-4 text-center text-body-md opacity-80">
+                Starting camera…
+              </p>
+            )}
+            {cameraStatus === "unavailable" && (
+              <p className="absolute inset-0 flex items-center justify-center px-4 text-center text-body-md opacity-80">
+                No camera found on this device.
+              </p>
+            )}
+            {scanError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-inverse-surface/95 px-4 text-center">
+                <p className="text-body-md">{scanError}</p>
+                <button
+                  type="button"
+                  onClick={retryScan}
+                  className="rounded-full bg-primary px-5 py-2.5 text-label-md font-semibold text-on-primary"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+          </div>
           <div className="flex gap-4">
             <button
               type="button"
@@ -184,14 +339,19 @@ export function ScanPay() {
               <Icon name="gallery" size={18} />
               Upload QR
             </button>
-            {/* Inert — no real camera to control. */}
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-full bg-surface-container-lowest px-5 py-3 text-body-lg font-medium text-primary shadow-card"
-            >
-              <Icon name="flashlight" size={18} />
-              Flashlight
-            </button>
+            {/* Only shown once the active scanner confirms this device
+                actually has a torch — no dead button on devices/desktops
+                that don't. */}
+            {hasFlash && (
+              <button
+                type="button"
+                onClick={toggleFlash}
+                className="flex items-center gap-2 rounded-full bg-surface-container-lowest px-5 py-3 text-body-lg font-medium text-primary shadow-card"
+              >
+                <Icon name="flashlight" size={18} />
+                {flashOn ? "Flash On" : "Flashlight"}
+              </button>
+            )}
           </div>
         </div>
 

@@ -1,13 +1,15 @@
 // Mirrors src/app/pay/success/[transactionId]/page.tsx — same layout, real
-// resolveTierProgress (pure, no prisma/supabase import), hardcoded
-// transaction + tier data standing in for the real fetch-by-id.
+// resolveTierProgress (pure, no prisma/supabase import). Transaction
+// description/amount come from what was actually typed on the preview pay
+// screen (passed via URL search params, since this is a plain client-side
+// navigation with no server action or prisma write behind it); everything
+// else here (tiers, monthly count, points earned) stays hardcoded mock data.
 import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { formatAmount, formatDayMonth, formatTime } from "@/lib/format";
 import { POINTS_PER_DOLLAR, resolveTierProgress } from "@/lib/rewards";
 
-const mockTransaction = { description: "Kopitiam", amountCents: -840, createdAt: new Date(), id: "clxpreviewmocktxn1" };
 const mockTiers = [
   { id: "1", name: "Bronze", txnCountNeeded: 0 },
   { id: "2", name: "Silver", txnCountNeeded: 20 },
@@ -17,7 +19,20 @@ const mockTiers = [
 const mockMonthlyPaymentCount = 33;
 const pointsEarned = 24;
 
-export default function PreviewPaySuccessPage() {
+export default async function PreviewPaySuccessPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ merchant?: string; amount?: string }>;
+}) {
+  const params = await searchParams;
+  const amountCents = Number(params.amount);
+  const mockTransaction = {
+    description: params.merchant?.trim() || "Kopitiam",
+    amountCents: -(Number.isFinite(amountCents) && amountCents > 0 ? amountCents : 840),
+    createdAt: new Date(),
+    id: "clxpreviewmocktxn1",
+  };
+
   const { current: currentTier, next: nextTier, progress: tierProgress } = resolveTierProgress(
     mockTiers,
     mockMonthlyPaymentCount,

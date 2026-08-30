@@ -47,5 +47,9 @@ next-env.d.ts
 # visual verification screenshots (local scratch output)
 /screenshots
 
+# generated demo QR codes for the Pay flow (scripts/generate-demo-qr.mjs) —
+# regenerable dev-only demo assets, not shipped
+/demo-qr-codes
+
 # Stitch design reference material (source of truth for redesign, not shipped)
 /stitch_visual_design_system_foundation

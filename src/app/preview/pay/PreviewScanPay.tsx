@@ -40,9 +40,19 @@ export function PreviewScanPay() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // Visual-only: no server action, nothing persisted. A brief "submitting"
-    // state before navigating just mirrors the real flow's feel.
+    // state before navigating just mirrors the real flow's feel — but the
+    // success page still needs what was actually typed here, since it has no
+    // other source of truth (no server action, no prisma) to read it back
+    // from. Passed via URL search params rather than router/component state,
+    // since /preview/pay/success is a separate page navigation.
     setSubmitting(true);
-    setTimeout(() => router.push("/preview/pay/success"), 400);
+    const amountCents = Math.round((Number(amount) || 0) * 100);
+    const params = new URLSearchParams({
+      merchant: merchant.trim(),
+      category,
+      amount: String(amountCents),
+    });
+    setTimeout(() => router.push(`/preview/pay/success?${params.toString()}`), 400);
   }
 
   if (step === "confirm") {
