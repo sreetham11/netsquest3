@@ -19,6 +19,7 @@ import { Icon } from "@/components/Icon";
 import { formatMoney, formatSignedMoney, formatAmount, formatDayMonth } from "@/lib/format";
 import { txnLeadingIcon, amountTone, txnValue } from "@/lib/txn";
 import { PROGRAMME_NAME, POINTS_PER_DOLLAR, resolveTierProgress } from "@/lib/rewards";
+import { TOOLS } from "@/lib/nav";
 import { topUp } from "../actions";
 
 // Rank-ordered so the biggest category reads as the most confident blue,
@@ -32,15 +33,21 @@ const CATEGORY_STROKE_CLASSES = [
   "stroke-surface-container-highest",
 ];
 
-// Stitch's quick actions are Top-up / History / Auto Top-up / More — not the
-// old Split/Bills/Activity row. Top-up has no dedicated route at all (it's
-// the inline form below, unchanged from before) so its tile just scrolls/
-// focuses that form instead of navigating.
-const quickActions = [
-  { href: "#topup-amount", label: "Top-up", icon: "upload" as const },
-  { href: "/transactions", label: "History", icon: "transactions" as const },
-  { href: "/more/auto-topup", label: "Auto Top-up", icon: "wallet" as const },
-  { href: "/more", label: "More", icon: "more" as const },
+// Quick actions and Tools shortcuts, unified into ONE compact icon-circle-
+// over-label row (they used to be two visually separate sections: this
+// 3-item row plus a "Tools" heading with bigger description cards below it).
+// Top-up has no dedicated route at all (it's the inline form below,
+// unchanged from before) so its tile just scrolls/focuses that form instead
+// of navigating. The other 3 core actions come first, then the 4 Tools
+// shortcuts (description dropped — this compact style never shows one, same
+// as Top-up/History/Auto Top-up already didn't). TOOLS itself (src/lib/
+// nav.ts) is untouched and still drives the More page's own richer
+// ToolCard grid with descriptions.
+const homeActions: Array<{ href: string; label: string; icon: (typeof TOOLS)[number]["icon"] }> = [
+  { href: "#topup-amount", label: "Top-up", icon: "upload" },
+  { href: "/transactions", label: "History", icon: "transactions" },
+  { href: "/more/auto-topup", label: "Auto Top-up", icon: "wallet" },
+  ...TOOLS.map((t) => ({ href: t.href, label: t.label, icon: t.icon })),
 ];
 
 export default async function HomePage() {
@@ -111,10 +118,12 @@ export default async function HomePage() {
             </div>
           </div>
 
-          {/* Quick actions — icon-circle over label, matching the floating
-              panel under the Main Card. */}
+          {/* Quick actions + Tools, unified into one box — icon-circle over
+              label, matching the floating panel under the Main Card. 7 items
+              -> grid-cols-4 (a full row of 4, then 3), rather than
+              grid-cols-3's uneven 3+3+1 split. */}
           <Card className="grid grid-cols-4 gap-2">
-            {quickActions.map((a) => (
+            {homeActions.map((a) => (
               <Link
                 key={a.label}
                 href={a.href}

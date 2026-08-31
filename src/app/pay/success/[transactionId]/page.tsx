@@ -149,6 +149,15 @@ export default async function PaymentSuccessPage({
         >
           Done
         </Link>
+        {/* The data's already sitting right here — no reason to make anyone
+            re-type description/amount into Split moments after paying. */}
+        <Link
+          href={`/split?from=${transaction.id}`}
+          className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-primary/30 text-title-lg font-semibold text-primary hover:bg-surface-container"
+        >
+          <Icon name="split" size={18} />
+          Split this
+        </Link>
         <Link
           href="/transactions"
           className="flex min-h-12 items-center justify-center rounded-full text-title-lg font-semibold text-primary hover:bg-surface-container"

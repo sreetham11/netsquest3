@@ -7,6 +7,7 @@ import { Icon, type IconName } from "@/components/Icon";
 import { BottomNav } from "@/components/BottomNav";
 import { makePayment, type MakePaymentState } from "@/app/(app)/actions";
 import { parseNetsQrPayload } from "@/lib/qrPayload";
+import { formatMoney } from "@/lib/format";
 
 // Category values a scanned QR's payload might name — snapped to one of the
 // confirm screen's own <select> options (falling back to "Shopping") so a
@@ -30,11 +31,25 @@ const RECENT_MERCHANTS: Array<{ name: string; category: string; icon: IconName }
 
 type Step = "scan" | "confirm";
 
-export function ScanPay() {
+// Minimum prior real payments before the advisory ever compares against
+// them — under this, "unusual for you" isn't a real claim yet (a brand-new
+// account's first payment can't be an outlier relative to nothing).
+const MIN_HISTORY_FOR_ADVISORY = 5;
+const OUTLIER_STD_DEVS = 2;
+
+export function ScanPay({
+  spendingStats,
+}: {
+  // Simple mean/stddev of the user's recent real payments (see
+  // getRecentPaymentStats) — an honest statistical comparison, not any real
+  // fraud/anomaly detection. Purely advisory: see isUnusualAmount below.
+  spendingStats: { count: number; meanCents: number; stdDevCents: number };
+}) {
   const [step, setStep] = useState<Step>("scan");
   const [merchant, setMerchant] = useState("");
   const [category, setCategory] = useState("Shopping");
   const [amount, setAmount] = useState("");
+  const [advisoryDismissed, setAdvisoryDismissed] = useState(false);
   const [state, formAction, pending] = useActionState<MakePaymentState, FormData>(
     makePayment,
     null,
@@ -165,6 +180,14 @@ export function ScanPay() {
   if (step === "confirm") {
     const amountCents = Math.round((Number(amount) || 0) * 100);
     const canSubmit = merchant.trim().length > 0 && amountCents > 0;
+    // stdDevCents > 0 guard: with zero variance in the history (e.g. every
+    // prior payment happened to be exactly the same amount), "mean + 2*SD"
+    // collapses to just "mean", which would flag ANY different amount —
+    // not a real signal, just a degenerate case of too-uniform history.
+    const isUnusualAmount =
+      spendingStats.count >= MIN_HISTORY_FOR_ADVISORY &&
+      spendingStats.stdDevCents > 0 &&
+      amountCents > spendingStats.meanCents + OUTLIER_STD_DEVS * spendingStats.stdDevCents;
 
     return (
       <div className="flex min-h-screen flex-col bg-background">
@@ -230,7 +253,10 @@ export function ScanPay() {
                 min="0.01"
                 step="0.01"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setAdvisoryDismissed(false);
+                }}
                 placeholder="0.00"
                 required
                 autoFocus
@@ -238,6 +264,32 @@ export function ScanPay() {
               />
             </div>
           </label>
+
+            {/* Advisory only — a genuine statistical comparison against this
+                user's own history ("unusually large for you"), explicitly
+                NOT framed as fraud/security detection, and never blocks
+                submission. Dismissible; re-appears if the amount changes
+                again since that's a new number worth a fresh look. */}
+            {isUnusualAmount && !advisoryDismissed ? (
+              <div className="flex items-start gap-2.5 rounded-lg border border-gold-tier/40 bg-gold-tier/5 p-3">
+                <Icon name="help-circle" size={18} className="mt-0.5 shrink-0 text-gold-tier" />
+                <div className="flex-1">
+                  <p className="text-body-md font-medium text-on-surface">This is unusually large for you</p>
+                  <p className="mt-0.5 text-label-md text-on-surface-variant">
+                    Your recent NETS payments have averaged about {formatMoney(spendingStats.meanCents)}. Just a
+                    heads-up — this won&apos;t stop your payment.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdvisoryDismissed(true)}
+                  aria-label="Dismiss"
+                  className="shrink-0 text-on-surface-variant hover:text-on-surface"
+                >
+                  <Icon name="plus" size={16} className="rotate-45" />
+                </button>
+              </div>
+            ) : null}
 
             {state?.error ? <p className="text-body-md text-error">{state.error}</p> : null}
 

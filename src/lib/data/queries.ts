@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { sweepExpiredPoints } from "@/lib/rewards";
 import { NETS_PAYMENT_TYPES } from "@/lib/netsPaymentTypes";
+import { transactionCategoryToIconCategory } from "@/lib/categoryIcon";
 
 export function startOfThisMonth(): Date {
   const now = new Date();
@@ -40,6 +41,27 @@ export async function getOverseasTransactions(userId: string) {
   });
 }
 
+// Rolling baseline for the Pay confirm screen's spending advisory (see
+// ScanPay) — an honest "this is unusually large for you" comparison against
+// the user's OWN recent history, simple mean/stddev, not a claim of real
+// fraud/anomaly detection. Real NETS payments only (a top-up isn't "spend"),
+// most recent 30 so a spending habit that's since changed isn't permanently
+// weighted by ancient history.
+export async function getRecentPaymentStats(userId: string) {
+  const recent = await prisma.transaction.findMany({
+    where: { userId, type: { in: [...NETS_PAYMENT_TYPES] }, amountCents: { lt: 0 } },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+    select: { amountCents: true },
+  });
+  const amounts = recent.map((t) => Math.abs(t.amountCents));
+  const count = amounts.length;
+  if (count === 0) return { count, meanCents: 0, stdDevCents: 0 };
+  const meanCents = amounts.reduce((s, a) => s + a, 0) / count;
+  const variance = amounts.reduce((s, a) => s + (a - meanCents) ** 2, 0) / count;
+  return { count, meanCents, stdDevCents: Math.sqrt(variance) };
+}
+
 // Splits are name-only (no real linked accounts), so visibility is simply
 // "you created it" — most recent first, since these are instant/short-lived.
 export async function getSplits(userId: string) {
@@ -48,6 +70,28 @@ export async function getSplits(userId: string) {
     orderBy: { createdAt: "desc" },
     include: { participants: true },
   });
+}
+
+// Smart Split's "Split with again" quick-pick — people the current user has
+// genuinely split with before, most recent split first. DELIBERATELY NOT a
+// browsable/searchable list of all registered users (that would let anyone
+// see who else has an account): scoped to this user's own past splits
+// (split.ownerId) and to linked participants only (SplitParticipant.userId
+// set) — a free-text-only participant has no real account to quick-pick
+// back into. `distinct` keeps the most recent row per partner given the
+// split.createdAt desc ordering. Excludes the current user themselves, in
+// case they once added their own email via the exact-match search.
+export async function getRecentSplitPartners(userId: string, take = 8) {
+  const rows = await prisma.splitParticipant.findMany({
+    where: { userId: { not: null }, split: { ownerId: userId } },
+    orderBy: { split: { createdAt: "desc" } },
+    distinct: ["userId"],
+    take: take + 1,
+    select: { userId: true, name: true },
+  });
+  return rows
+    .filter((r): r is { userId: string; name: string } => r.userId !== null && r.userId !== userId)
+    .slice(0, take);
 }
 
 // How soon an expiring lot counts as "worth a heads-up" in the UI.
@@ -136,9 +180,46 @@ export async function getRewards(userId: string) {
   };
 }
 
-// Merchant cashback marketplace — global catalogue, not user-scoped.
+// Merchant cashback marketplace — global catalogue, not user-scoped. Kept
+// as-is (still used unpersonalized by Home's featured-deal teaser); the
+// personalized ranking below is a separate function specifically for
+// Rewards' Merchant Boosts section, not a change to this one's behavior.
 export async function getMerchantDeals() {
   return prisma.merchantDeal.findMany({ orderBy: { sortOrder: "asc" } });
+}
+
+// Same catalogue, reordered by relevance to this user's own real spending —
+// a deal in a category the user actually spends in surfaces first. Never
+// hides a deal, only reorders (every entry from getMerchantDeals() is still
+// present); with no spending history (or no category overlap at all) every
+// deal ties at relevance 0 and the result is identical to the original
+// sortOrder, so this can't crash or produce a jarring shuffle for a brand-
+// new account.
+//
+// Transaction.category ("Food", "Groceries", ...) and MerchantDeal.category
+// ("food", "grocery", "cafe", ...) are different vocabularies — reconciled
+// via transactionCategoryToIconCategory rather than a naive lowercase match,
+// which only accidentally works for a couple of them.
+export async function getMerchantDealsRankedForUser(userId: string) {
+  const [deals, categorySpend] = await Promise.all([
+    getMerchantDeals(),
+    // Real spend only (already excludes top-ups/etc — see its own comment),
+    // last 30 days — the same signal Home's donut chart uses.
+    getRecentSpendByCategory(userId),
+  ]);
+
+  const spendByIconCategory: Record<string, number> = {};
+  for (const [txnCategory, cents] of Object.entries(categorySpend)) {
+    const iconCategory = transactionCategoryToIconCategory(txnCategory);
+    if (iconCategory) {
+      spendByIconCategory[iconCategory] = (spendByIconCategory[iconCategory] ?? 0) + cents;
+    }
+  }
+
+  return [...deals].sort((a, b) => {
+    const relevanceDelta = (spendByIconCategory[b.category] ?? 0) - (spendByIconCategory[a.category] ?? 0);
+    return relevanceDelta !== 0 ? relevanceDelta : a.sortOrder - b.sortOrder;
+  });
 }
 
 // Home's Spending Plan card: this month's balance split into what's already

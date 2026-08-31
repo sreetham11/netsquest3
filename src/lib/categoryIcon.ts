@@ -27,3 +27,23 @@ export const BUDGET_CATEGORIES = [
   "Utilities",
   "Other",
 ];
+
+// Transaction.category (BUDGET_CATEGORIES, capitalized free-form: "Food",
+// "Groceries", ...) and the icon-style category vocabulary Split's dropdown
+// and MerchantDeal.category both use ("food", "grocery", "cafe", "ride",
+// "cinema", "convenience", "pharmacy", ...) are DIFFERENT vocabularies — a
+// naive .toLowerCase() only accidentally works for "Food" -> "food". This is
+// the one explicit reconciliation between them; some Transaction categories
+// (Shopping, Utilities, Other) genuinely have no good icon-category match —
+// those return null rather than guessing one. Used by both Split's "start
+// from a real transaction" prefill and Rewards' merchant-relevance sort.
+const TRANSACTION_TO_ICON_CATEGORY: Record<string, string> = {
+  Food: "food",
+  Groceries: "grocery",
+  Transport: "ride",
+  Entertainment: "cinema",
+};
+
+export function transactionCategoryToIconCategory(category: string): string | null {
+  return TRANSACTION_TO_ICON_CATEGORY[category] ?? null;
+}

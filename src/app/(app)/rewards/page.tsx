@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { getRewards, getMerchantDeals } from "@/lib/data/queries";
+import { getRewards, getMerchantDealsRankedForUser } from "@/lib/data/queries";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ListRow } from "@/components/ui/ListRow";
@@ -64,7 +64,7 @@ export default async function RewardsPage({
         </ButtonLink>
       </div>
 
-      {activeTab === "points" ? <PointsTab userId={user.id} /> : <MarketplaceTab />}
+      {activeTab === "points" ? <PointsTab userId={user.id} /> : <MarketplaceTab userId={user.id} />}
     </div>
   );
 }
@@ -325,14 +325,17 @@ async function PointsTab({ userId }: { userId: string }) {
   );
 }
 
-async function MarketplaceTab() {
-  const deals = await getMerchantDeals();
+async function MarketplaceTab({ userId }: { userId: string }) {
+  // Reordered by relevance to this user's own real spending — see
+  // getMerchantDealsRankedForUser. Never hides a deal, only reorders; with
+  // no spending history it's identical to the original catalogue order.
+  const deals = await getMerchantDealsRankedForUser(userId);
 
   return (
     <div>
       {/* Matches nets_rewards/screen.png's "Merchant Boosts" section — the
           closest analog to a merchant marketplace in that reference. Same
-          getMerchantDeals() data as before, just restyled to that section's
+          underlying deal data as before, just restyled to that section's
           row treatment (icon box + name + offer chip + chevron) instead of
           the old ListRow-with-value layout. */}
       <p className="mb-4 text-body-md text-on-surface-variant">

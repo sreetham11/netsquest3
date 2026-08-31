@@ -3,24 +3,17 @@ import { requireUser } from "@/lib/auth";
 import { logout } from "@/app/auth/actions";
 import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
+import { ToolCard } from "@/components/ui/ToolCard";
 import { Icon, type IconName } from "@/components/Icon";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { displayNameFromEmail } from "@/lib/user";
+import { TOOLS } from "@/lib/nav";
 
 const CARD_ROWS: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/more/card-settings", label: "Card Settings", icon: "settings" },
   { href: "/more/auto-topup", label: "Auto Top-up", icon: "wallet" },
   { href: "/more/transaction-limits", label: "Transaction Limits", icon: "sliders" },
   { href: "/more/security", label: "Security & Privacy", icon: "shield" },
-];
-
-// Existing pages, unchanged — not redesigned in this pass (no Stitch screen
-// exists for any of them yet).
-const TOOLS: Array<{ href: string; label: string; description: string; icon: IconName }> = [
-  { href: "/split", label: "Smart Split", description: "Scan receipt & divide bills", icon: "split" },
-  { href: "/budget", label: "Spending Insights", description: "Understand your NETS spending", icon: "budget" },
-  { href: "/bills", label: "Bill Tracker", description: "Track upcoming bills", icon: "bills" },
-  { href: "/overseas", label: "Overseas", description: "Explore supported NETS destinations", icon: "overseas" },
 ];
 
 const SUPPORT_ROWS: Array<{ href: string; label: string }> = [
@@ -98,19 +91,7 @@ export default async function MorePage() {
         </h3>
         <div className="grid grid-cols-2 gap-3">
           {TOOLS.map((tool) => (
-            <Link
-              key={tool.href}
-              href={tool.href}
-              className="flex flex-col gap-3 rounded-lg border border-border-light bg-surface-container-lowest p-stack-md shadow-card transition-colors hover:border-primary/20"
-            >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Icon name={tool.icon} size={22} />
-              </span>
-              <div>
-                <p className="text-body-lg font-semibold text-on-surface">{tool.label}</p>
-                <p className="mt-0.5 text-body-md text-on-surface-variant">{tool.description}</p>
-              </div>
-            </Link>
+            <ToolCard key={tool.href} tool={tool} />
           ))}
         </div>
       </section>

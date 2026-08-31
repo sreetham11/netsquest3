@@ -37,6 +37,29 @@ export default async function TransactionsPage() {
       .map((t) => [t.id, <RefundButton key={t.id} transactionId={t.id} />]),
   );
 
+  // Splittable: same real-NETS-payment-debit criterion as refundable, minus
+  // the not-already-refunded check — asking friends to cover their share of
+  // something you paid is unrelated to whether it was later refunded to you.
+  // A plain <Link> (unlike RefundButton) touches neither prisma nor a server
+  // action, so no isolation concern building it directly here.
+  const splitActionsById = Object.fromEntries(
+    txns
+      .filter((t) => isNetsPaymentType(t.type) && t.amountCents < 0)
+      .map((t) => [
+        t.id,
+        // Same small secondary-action button treatment as RefundButton — see
+        // its comment for the "reuse the filter chips' colors, rounded-md
+        // instead of rounded-full" reasoning.
+        <Link
+          key={t.id}
+          href={`/split?from=${t.id}`}
+          className="inline-flex items-center rounded-md border border-border-light bg-surface-grey px-3 py-1.5 text-label-md font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-high"
+        >
+          Split this
+        </Link>,
+      ]),
+  );
+
   const since = startOfThisMonth();
   const monthLabel = since.toLocaleDateString("en-SG", { month: "long" });
   const topCategories = Object.entries(categorySpend)
@@ -91,7 +114,12 @@ export default async function TransactionsPage() {
             description="Your activity will appear here once you start spending or topping up."
           />
         ) : (
-          <ActivityList txns={txns} currency={currency} refundActionsById={refundActionsById} />
+          <ActivityList
+            txns={txns}
+            currency={currency}
+            refundActionsById={refundActionsById}
+            splitActionsById={splitActionsById}
+          />
         )}
         {/* No "View More Activity" button: getAllTransactions already returns
             the complete history (unchanged, unpaginated) — there's nothing

@@ -34,6 +34,7 @@ export function ActivityList({
   txns,
   currency,
   refundActionsById,
+  splitActionsById,
 }: {
   txns: Txn[];
   currency: string;
@@ -50,6 +51,9 @@ export function ActivityList({
   // /transactions page passes this; src/app/preview/activity (out of scope,
   // explicitly not to be touched) doesn't, so nothing renders there.
   refundActionsById?: Record<string, ReactNode>;
+  // Same render-prop reasoning as refundActionsById — these are plain <Link>
+  // elements though, so nothing here needs prisma/actions.ts at all either.
+  splitActionsById?: Record<string, ReactNode>;
 }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("all");
 
@@ -109,6 +113,7 @@ export function ActivityList({
                 <div className="divide-y divide-border-light px-stack-md">
                   {rows.map((t) => {
                     const refundAction = refundActionsById?.[t.id];
+                    const splitAction = splitActionsById?.[t.id];
                     return (
                       <div key={t.id}>
                         <ListRow
@@ -119,7 +124,12 @@ export function ActivityList({
                           value={txnValue(t.type, t.amountCents, formatSignedMoney(t.amountCents, currency))}
                           valueTone={amountTone(t.type, t.amountCents)}
                         />
-                        {refundAction ? <div className="flex justify-end pb-2">{refundAction}</div> : null}
+                        {splitAction || refundAction ? (
+                          <div className="flex justify-end gap-2 pb-2">
+                            {splitAction}
+                            {refundAction}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}

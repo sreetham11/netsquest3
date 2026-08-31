@@ -35,6 +35,28 @@ export const SECONDARY_ITEMS: NavItem[] = [
   { href: "/budget", label: "Budget", shortLabel: "Budget", icon: "budget" },
 ];
 
+export type ToolItem = {
+  href: string;
+  label: string;
+  description: string;
+  icon: IconName;
+};
+
+// Shared between Home's Tools section and the More page's own Tools grid —
+// same 4 cards, same routes, reused directly (via components/ui/ToolCard)
+// rather than risking two hand-written label/description sets drifting
+// apart. A separate shape from SECONDARY_ITEMS above (that one's plain nav
+// links with a shortLabel for the desktop sidebar; this one needs a
+// description for the card body) even though the routes overlap — existing
+// pages, unchanged — not redesigned in this pass (no Stitch screen exists
+// for any of them yet).
+export const TOOLS: ToolItem[] = [
+  { href: "/split", label: "Smart Split", description: "Scan receipt & divide bills", icon: "split" },
+  { href: "/budget", label: "Spending Insights", description: "Understand your NETS spending", icon: "budget" },
+  { href: "/bills", label: "Bill Tracker", description: "Track upcoming bills", icon: "bills" },
+  { href: "/overseas", label: "Overseas", description: "Explore supported NETS destinations", icon: "overseas" },
+];
+
 // Every real authenticated route, for the proxy's edge-level auth gate.
 // Deliberately NOT just NAV_ITEMS.map(...) anymore: before this phase, "in
 // primary nav" and "needs auth" were the same 7 routes, so one list served

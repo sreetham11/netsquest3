@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/Icon";
 import { formatMoney } from "@/lib/format";
 import { DEMO_RECEIPT, type ParsedReceipt } from "@/lib/receipt";
-import { createSplit, findRegisteredUserByEmail, type CreateSplitState, type UserLookupResult } from "../actions";
+import { createSplit, type CreateSplitState, type UserLookupResult } from "../actions";
+import { useEmailLookup } from "./useEmailLookup";
 
 const CATEGORIES: Array<{ value: string; label: string; icon: IconName }> = [
   { value: "General", label: "General", icon: "split" },
@@ -67,11 +68,26 @@ function draftItemsFrom(receipt: ParsedReceipt): DraftItem[] {
   }));
 }
 
-export function NewSplitForm() {
-  const [expanded, setExpanded] = useState(false);
-  const [title, setTitle] = useState("");
-  const [totalAmount, setTotalAmount] = useState("");
-  const [category, setCategory] = useState("General");
+export function NewSplitForm({
+  initialTitle,
+  initialTotalAmount,
+  initialCategory,
+}: {
+  // Prefill from a real Transaction (Split's "Split this" entry point — see
+  // split/page.tsx, which resolves these from the transaction server-side
+  // rather than trusting raw query-string values as authoritative). Only
+  // ever set together in practice; the form still works with none of them
+  // (the original manual-entry-first behavior) since every field is
+  // optional. Auto-expands when a prefill is present — the whole point is
+  // skipping the extra "+ New split" tap.
+  initialTitle?: string;
+  initialTotalAmount?: string;
+  initialCategory?: string;
+}) {
+  const [expanded, setExpanded] = useState(Boolean(initialTitle));
+  const [title, setTitle] = useState(initialTitle ?? "");
+  const [totalAmount, setTotalAmount] = useState(initialTotalAmount ?? "");
+  const [category, setCategory] = useState(initialCategory ?? "General");
   const [names, setNames] = useState<string[]>([DEFAULT_NAME]);
   const [nameInput, setNameInput] = useState("");
   // name -> the real userId it references, only present for linked
