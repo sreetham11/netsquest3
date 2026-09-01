@@ -63,7 +63,7 @@ export default async function SplitPage({
     <div>
       <PageHeader title="Split" subtitle="Instant bill splitting — no invites, no waiting." />
 
-      <p className="text-base font-medium text-ink">
+      <p className="text-body-lg font-medium text-on-surface">
         You covered dinner. Split makes sure it doesn&apos;t stay that way.
       </p>
 
@@ -100,24 +100,24 @@ export default async function SplitPage({
 
             return (
               <Card key={split.id} padded={false} className="overflow-hidden">
-                <div className="h-1.5 bg-accent" />
+                <div className="h-1.5 bg-primary" />
                 <div className="p-8">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-white">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary">
                       <Icon name={CATEGORY_ICON[split.category] ?? "split"} size={22} />
                     </div>
                     <div className="min-w-0">
-                      <h2 className="truncate text-2xl font-bold tracking-tight text-ink">
+                      <h2 className="truncate text-headline-md text-on-surface">
                         {split.title}
                       </h2>
-                      <p className="mt-0.5 text-sm text-ink-muted">
+                      <p className="mt-0.5 text-body-md text-on-surface-variant">
                         {formatDayMonth(split.createdAt)}
                       </p>
                     </div>
                   </div>
 
                   <div className="mt-5 flex items-center justify-between gap-3">
-                    <p className="text-2xl font-bold text-ink">{formatMoney(split.totalAmountCents)}</p>
+                    <p className="text-currency-display text-on-surface">{formatMoney(split.totalAmountCents)}</p>
                     <div className="flex -space-x-2">
                       {split.participants.map((p, i) => (
                         <Avatar key={p.id} name={p.name} index={i} size={32} className="ring-2 ring-surface" />
@@ -127,7 +127,7 @@ export default async function SplitPage({
 
                   <div className="mt-5">
                     <div className="flex items-center justify-between">
-                      <span className="rounded-full bg-nets-blue-100 px-3 py-1 text-sm font-medium text-accent">
+                      <span className="rounded-full bg-primary/10 px-3 py-1 text-body-md font-medium text-primary">
                         {paidCount} of {total} paid
                       </span>
                     </div>
@@ -136,24 +136,24 @@ export default async function SplitPage({
                     </div>
                   </div>
 
-                  <div className="mt-6 divide-y divide-line border-t border-line">
+                  <div className="mt-6 divide-y divide-border-light border-t border-border-light">
                     {split.participants.map((p, i) => (
                       <div key={p.id} className="flex items-center gap-3 py-3">
                         <Avatar name={p.name} index={i} size={32} />
                         <div className="min-w-0 flex-1">
-                          <p className="flex items-center gap-1.5 truncate text-sm font-medium text-ink">
+                          <p className="flex items-center gap-1.5 truncate text-body-md font-medium text-on-surface">
                             {p.name}
                             {p.userId ? (
                               <Icon
                                 name="check-circle"
                                 size={12}
-                                className="shrink-0 text-accent"
+                                className="shrink-0 text-primary"
                                 aria-hidden={false}
                                 aria-label="Registered user"
                               />
                             ) : null}
                           </p>
-                          <p className="text-sm text-ink-muted">{formatMoney(p.shareAmountCents)}</p>
+                          <p className="text-body-md text-on-surface-variant">{formatMoney(p.shareAmountCents)}</p>
                         </div>
                         <form action={toggleSplitParticipantPaid}>
                           <input type="hidden" name="participantId" value={p.id} />
@@ -161,8 +161,8 @@ export default async function SplitPage({
                             type="submit"
                             className={
                               p.paid
-                                ? "inline-flex items-center gap-1 rounded-full bg-accent-strong px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
-                                : "inline-flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-muted"
+                                ? "inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-label-md font-medium text-on-primary hover:opacity-90"
+                                : "inline-flex items-center gap-1 rounded-full border border-border-light px-3 py-1.5 text-label-md font-medium text-on-surface-variant hover:bg-surface-container-low"
                             }
                           >
                             {p.paid ? (

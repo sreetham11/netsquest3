@@ -51,7 +51,7 @@ export type ToolItem = {
 // pages, unchanged — not redesigned in this pass (no Stitch screen exists
 // for any of them yet).
 export const TOOLS: ToolItem[] = [
-  { href: "/split", label: "Smart Split", description: "Scan receipt & divide bills", icon: "split" },
+  { href: "/split/new", label: "Smart Split", description: "Split real NETS payments with friends", icon: "split" },
   { href: "/budget", label: "Spending Insights", description: "Understand your NETS spending", icon: "budget" },
   { href: "/bills", label: "Bill Tracker", description: "Track upcoming bills", icon: "bills" },
   { href: "/overseas", label: "Overseas", description: "Explore supported NETS destinations", icon: "overseas" },

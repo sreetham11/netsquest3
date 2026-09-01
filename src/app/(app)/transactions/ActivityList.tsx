@@ -35,6 +35,9 @@ export function ActivityList({
   currency,
   refundActionsById,
   splitActionsById,
+  selectable = false,
+  selectedIds,
+  onToggleSelect,
 }: {
   txns: Txn[];
   currency: string;
@@ -54,6 +57,16 @@ export function ActivityList({
   // Same render-prop reasoning as refundActionsById — these are plain <Link>
   // elements though, so nothing here needs prisma/actions.ts at all either.
   splitActionsById?: Record<string, ReactNode>;
+  // Multi-select mode for Smart Split's "Select Transaction(s)" step (see
+  // SmartSplitFlow) — reuses this exact grouped/filtered list instead of a
+  // parallel one. selectedIds/onToggleSelect are both a plain Set/callback
+  // (this is a Client Component calling another Client Component, so no
+  // Server->Client boundary is crossed — unlike refundActionsById/
+  // splitActionsById above). Not used together with those two props in
+  // practice: the Smart Split page passes neither.
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("all");
 
@@ -114,17 +127,46 @@ export function ActivityList({
                   {rows.map((t) => {
                     const refundAction = refundActionsById?.[t.id];
                     const splitAction = splitActionsById?.[t.id];
+                    const selected = selectable && selectedIds?.has(t.id);
+                    const row = (
+                      <ListRow
+                        leading={<Icon name={txnLeadingIcon(t.type, t.amountCents)} size={18} />}
+                        leadingTone={t.amountCents > 0 ? "success" : "primary"}
+                        title={t.description}
+                        subtitle={`${t.category}${t.country ? ` · ${t.country}` : ""}`}
+                        value={txnValue(t.type, t.amountCents, formatSignedMoney(t.amountCents, currency))}
+                        valueTone={amountTone(t.type, t.amountCents)}
+                      />
+                    );
                     return (
                       <div key={t.id}>
-                        <ListRow
-                          leading={<Icon name={txnLeadingIcon(t.type, t.amountCents)} size={18} />}
-                          leadingTone={t.amountCents > 0 ? "success" : "primary"}
-                          title={t.description}
-                          subtitle={`${t.category}${t.country ? ` · ${t.country}` : ""}`}
-                          value={txnValue(t.type, t.amountCents, formatSignedMoney(t.amountCents, currency))}
-                          valueTone={amountTone(t.type, t.amountCents)}
-                        />
-                        {splitAction || refundAction ? (
+                        {selectable ? (
+                          <button
+                            type="button"
+                            onClick={() => onToggleSelect?.(t.id)}
+                            aria-pressed={selected}
+                            className={
+                              "flex w-full items-center gap-3 rounded-lg px-1 text-left transition-colors " +
+                              (selected ? "bg-primary/5" : "hover:bg-surface-container-low")
+                            }
+                          >
+                            <span
+                              aria-hidden="true"
+                              className={
+                                "flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border-2 " +
+                                (selected
+                                  ? "border-primary bg-primary text-on-primary"
+                                  : "border-outline-variant")
+                              }
+                            >
+                              {selected ? <Icon name="check" size={12} /> : null}
+                            </span>
+                            <span className="min-w-0 flex-1">{row}</span>
+                          </button>
+                        ) : (
+                          row
+                        )}
+                        {!selectable && (splitAction || refundAction) ? (
                           <div className="flex justify-end gap-2 pb-2">
                             {splitAction}
                             {refundAction}

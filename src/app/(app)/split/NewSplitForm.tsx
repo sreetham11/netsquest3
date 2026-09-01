@@ -72,6 +72,10 @@ export function NewSplitForm({
   initialTitle,
   initialTotalAmount,
   initialCategory,
+  initialItems,
+  initialNames,
+  initialParticipantUserIds,
+  onCreated,
 }: {
   // Prefill from a real Transaction (Split's "Split this" entry point — see
   // split/page.tsx, which resolves these from the transaction server-side
@@ -83,20 +87,41 @@ export function NewSplitForm({
   initialTitle?: string;
   initialTotalAmount?: string;
   initialCategory?: string;
+  // Smart Split's "Select Transaction(s)" step (see SmartSplitFlow) hands
+  // each selected transaction in as one line item here — the exact same
+  // itemized structure a scanned receipt's items already take (see
+  // draftItemsFrom below), rather than a parallel representation. Seeds
+  // scanItems and jumps straight to the "confirmed" scan step so "By items"
+  // is immediately available, same as after a real scan.
+  initialItems?: Array<{ name: string; price: string }>;
+  // Smart Split's "Choose who to split with" step (quick-pick + the same
+  // exact-email search below) hands its selections in as these — the
+  // "who's splitting it" input further down still works exactly as before
+  // for adding/removing anyone else.
+  initialNames?: string[];
+  initialParticipantUserIds?: Record<string, string>;
+  // Smart Split lives on its own page (src/app/(app)/split/new), not inline
+  // in the splits list like "Split this" — it needs to navigate away after
+  // a successful create instead of just resetting in place.
+  onCreated?: () => void;
 }) {
+  const hasInitialItems = Boolean(initialItems && initialItems.length > 0);
   const [expanded, setExpanded] = useState(Boolean(initialTitle));
   const [title, setTitle] = useState(initialTitle ?? "");
   const [totalAmount, setTotalAmount] = useState(initialTotalAmount ?? "");
   const [category, setCategory] = useState(initialCategory ?? "General");
-  const [names, setNames] = useState<string[]>([DEFAULT_NAME]);
+  const [names, setNames] = useState<string[]>(
+    initialNames && initialNames.length > 0 ? initialNames : [DEFAULT_NAME],
+  );
   const [nameInput, setNameInput] = useState("");
   // name -> the real userId it references, only present for linked
   // participants — free-text names (the default/fallback path) never have
   // an entry here. Keyed by the same display-name string `names` already
   // uses everywhere else, so none of the existing name-keyed bookkeeping
   // (customAmounts, itemAssignments, equal-share indexing) needs to change.
-  const [participantUserIds, setParticipantUserIds] = useState<Record<string, string>>({});
-  const [matchedUser, setMatchedUser] = useState<UserLookupResult>(null);
+  const [participantUserIds, setParticipantUserIds] = useState<Record<string, string>>(
+    initialParticipantUserIds ?? {},
+  );
   const [method, setMethod] = useState<SplitMethod>("equal");
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   // Item id -> names assigned to it. Only meaningful in "items" method, and
@@ -104,10 +129,16 @@ export function NewSplitForm({
   // entry) — see the method-picker's conditional render below.
   const [itemAssignments, setItemAssignments] = useState<Record<number, string[]>>({});
 
-  const [mode, setMode] = useState<EntryMode>("manual");
-  const [scanStep, setScanStep] = useState<ScanStep>("options");
-  const [scanItems, setScanItems] = useState<DraftItem[]>([]);
-  const [scanReviewTotal, setScanReviewTotal] = useState("");
+  const [mode, setMode] = useState<EntryMode>(hasInitialItems ? "scan" : "manual");
+  const [scanStep, setScanStep] = useState<ScanStep>(hasInitialItems ? "confirmed" : "options");
+  const [scanItems, setScanItems] = useState<DraftItem[]>(
+    initialItems ? initialItems.map((it, i) => ({ id: i, name: it.name, price: it.price })) : [],
+  );
+  // Seeded from initialTotalAmount too (not just totalAmount) so that if the
+  // user hits "Edit" on an already-confirmed Smart Split summary, the total
+  // field they land on shows the real figure instead of a blank one they'd
+  // have to retype before "Looks good, continue" re-enables.
+  const [scanReviewTotal, setScanReviewTotal] = useState(initialTotalAmount ?? "");
   const [scanError, setScanError] = useState("");
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -118,33 +149,16 @@ export function NewSplitForm({
   );
 
   useEffect(() => {
-    if (state?.ok) reset();
-  }, [state]);
+    if (state?.ok) {
+      reset();
+      onCreated?.();
+    }
+    // onCreated must stay a stable reference (memoized by the caller —
+    // see handleCreated in SmartSplitFlow) so this doesn't re-fire on every
+    // unrelated re-render once state.ok is already true.
+  }, [state, onCreated]);
 
-  // Debounced strict lookup as the user types — findRegisteredUserByEmail
-  // itself refuses to match anything until the input looks like a complete
-  // email, so this only ever fires a real query once there's something
-  // worth checking, not on every keystroke of a short partial string.
-  useEffect(() => {
-    const trimmed = nameInput.trim();
-    // Empty input needs no state reset here — displayedMatch (derived below,
-    // during render) already treats blank input as "no match" without
-    // needing an effect-driven setState for that branch.
-    if (!trimmed) return;
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      const result = await findRegisteredUserByEmail(trimmed);
-      if (!cancelled) setMatchedUser(result);
-    }, 400);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [nameInput]);
-  // Guards against showing a stale match left over from a previous, since-
-  // cleared input (e.g. right after addLinkedUser resets nameInput but the
-  // debounce timer for the old value hasn't been superseded by a render yet).
-  const displayedMatch = nameInput.trim() ? matchedUser : null;
+  const displayedMatch = useEmailLookup(nameInput);
 
   function reset() {
     setTitle("");
@@ -153,7 +167,6 @@ export function NewSplitForm({
     setNames([DEFAULT_NAME]);
     setNameInput("");
     setParticipantUserIds({});
-    setMatchedUser(null);
     setMethod("equal");
     setCustomAmounts({});
     setItemAssignments({});
@@ -245,7 +258,6 @@ export function NewSplitForm({
     }
     setNames((prev) => [...prev, n]);
     setNameInput("");
-    setMatchedUser(null);
   }
 
   // Adds a real registered user found via the strict email match above —
@@ -259,7 +271,6 @@ export function NewSplitForm({
       setParticipantUserIds((prev) => ({ ...prev, [result.displayName]: result.userId }));
     }
     setNameInput("");
-    setMatchedUser(null);
   }
 
   function removeName(n: string) {
@@ -354,11 +365,11 @@ export function NewSplitForm({
 
   return (
     <Card padded={false} className="overflow-hidden">
-      <div className="h-1.5 bg-accent" />
+      <div className="h-1.5 bg-primary" />
       <div className="p-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-ink">New split</h2>
-          <button type="button" onClick={reset} className="text-sm text-ink-muted hover:text-ink">
+          <h2 className="text-title-lg text-on-surface">New split</h2>
+          <button type="button" onClick={reset} className="text-body-md text-on-surface-variant hover:text-on-surface">
             Cancel
           </button>
         </div>
@@ -391,13 +402,13 @@ export function NewSplitForm({
           <input type="hidden" name="category" value={category} />
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-ink">What&apos;s it for?</span>
+            <span className="text-body-md font-medium text-on-surface">What&apos;s it for?</span>
             <input
               name="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Dinner at Din Tai Fung"
-              className="rounded-button border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              className="rounded-lg border border-border-light bg-surface-container-lowest px-3 py-2 text-body-md text-on-surface outline-none focus:border-primary"
               required
             />
           </label>
@@ -405,9 +416,9 @@ export function NewSplitForm({
           {mode === "manual" ? (
             <div className="flex gap-3">
               <label className="flex flex-1 flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">Total amount</span>
+                <span className="text-body-md font-medium text-on-surface">Total amount</span>
                 <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-muted">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-body-md text-on-surface-variant">
                     $
                   </span>
                   <input
@@ -418,17 +429,17 @@ export function NewSplitForm({
                     value={totalAmount}
                     onChange={(e) => setTotalAmount(e.target.value)}
                     placeholder="0.00"
-                    className="w-full rounded-button border border-line bg-surface py-2 pl-7 pr-3 text-sm text-ink outline-none focus:border-accent"
+                    className="w-full rounded-lg border border-border-light bg-surface-container-lowest py-2 pl-7 pr-3 text-body-md text-on-surface outline-none focus:border-primary"
                     required
                   />
                 </div>
               </label>
               <label className="flex w-36 flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">Category</span>
+                <span className="text-body-md font-medium text-on-surface">Category</span>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="rounded-button border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  className="rounded-lg border border-border-light bg-surface-container-lowest px-3 py-2 text-body-md text-on-surface outline-none focus:border-primary"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c.value} value={c.value}>
@@ -444,11 +455,11 @@ export function NewSplitForm({
               <input type="hidden" name="totalAmount" value={totalAmount} />
 
               <label className="flex w-36 flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">Category</span>
+                <span className="text-body-md font-medium text-on-surface">Category</span>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="rounded-button border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  className="rounded-lg border border-border-light bg-surface-container-lowest px-3 py-2 text-body-md text-on-surface outline-none focus:border-primary"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c.value} value={c.value}>
@@ -464,25 +475,25 @@ export function NewSplitForm({
                     <button
                       type="button"
                       onClick={() => cameraInputRef.current?.click()}
-                      className="flex flex-col items-center gap-2 rounded-button border border-line bg-surface px-4 py-5 text-sm font-medium text-ink hover:bg-surface-muted"
+                      className="flex flex-col items-center gap-2 rounded-lg border border-border-light bg-surface-container-lowest px-4 py-5 text-body-md font-medium text-on-surface hover:bg-surface-container-low"
                     >
-                      <Icon name="camera" size={22} className="text-accent" />
+                      <Icon name="camera" size={22} className="text-primary" />
                       Take photo
                     </button>
                     <button
                       type="button"
                       onClick={() => uploadInputRef.current?.click()}
-                      className="flex flex-col items-center gap-2 rounded-button border border-line bg-surface px-4 py-5 text-sm font-medium text-ink hover:bg-surface-muted"
+                      className="flex flex-col items-center gap-2 rounded-lg border border-border-light bg-surface-container-lowest px-4 py-5 text-body-md font-medium text-on-surface hover:bg-surface-container-low"
                     >
-                      <Icon name="upload" size={22} className="text-accent" />
+                      <Icon name="upload" size={22} className="text-primary" />
                       Upload receipt
                     </button>
                     <button
                       type="button"
                       onClick={loadDemoReceipt}
-                      className="flex flex-col items-center gap-2 rounded-button border border-line bg-surface px-4 py-5 text-sm font-medium text-ink hover:bg-surface-muted"
+                      className="flex flex-col items-center gap-2 rounded-lg border border-border-light bg-surface-container-lowest px-4 py-5 text-body-md font-medium text-on-surface hover:bg-surface-container-low"
                     >
-                      <Icon name="bills" size={22} className="text-accent" />
+                      <Icon name="bills" size={22} className="text-primary" />
                       Try demo receipt
                     </button>
                   </div>
@@ -512,7 +523,7 @@ export function NewSplitForm({
                   <button
                     type="button"
                     onClick={backToManual}
-                    className="self-start text-sm text-ink-muted hover:text-ink"
+                    className="self-start text-body-md text-on-surface-variant hover:text-on-surface"
                   >
                     Enter manually instead
                   </button>
@@ -520,15 +531,15 @@ export function NewSplitForm({
               ) : null}
 
               {scanStep === "loading" ? (
-                <div className="flex flex-col items-center justify-center gap-3 rounded-button border border-line bg-surface-muted px-4 py-8 text-center">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent" />
-                  <p className="text-sm text-ink-muted">Reading your receipt…</p>
+                <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border-light bg-surface-container-low px-4 py-8 text-center">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-border-light border-t-primary" />
+                  <p className="text-body-md text-on-surface-variant">Reading your receipt…</p>
                 </div>
               ) : null}
 
               {scanStep === "error" ? (
-                <div className="flex flex-col gap-3 rounded-button border border-line bg-surface-muted px-4 py-5">
-                  <p className="text-sm text-danger-strong">{scanError}</p>
+                <div className="flex flex-col gap-3 rounded-lg border border-border-light bg-surface-container-low px-4 py-5">
+                  <p className="text-body-md text-error">{scanError}</p>
                   <div className="flex gap-2">
                     <Button type="button" variant="secondary" onClick={() => setScanStep("options")}>
                       Try again
@@ -542,17 +553,17 @@ export function NewSplitForm({
 
               {scanStep === "review" ? (
                 <div className="flex flex-col gap-3">
-                  <div className="divide-y divide-line rounded-button border border-line">
+                  <div className="divide-y divide-border-light rounded-lg border border-border-light">
                     {scanItems.map((item) => (
                       <div key={item.id} className="flex items-center gap-2 px-3 py-2">
                         <input
                           value={item.name}
                           onChange={(e) => updateScanItemName(item.id, e.target.value)}
                           placeholder="Item name"
-                          className="min-w-0 flex-1 border-none bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
+                          className="min-w-0 flex-1 border-none bg-transparent text-body-md text-on-surface outline-none placeholder:text-on-surface-variant"
                         />
                         <div className="relative w-24 shrink-0">
-                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-muted">
+                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-label-md text-on-surface-variant">
                             $
                           </span>
                           <input
@@ -561,30 +572,30 @@ export function NewSplitForm({
                             step="0.01"
                             value={item.price}
                             onChange={(e) => updateScanItemPrice(item.id, e.target.value)}
-                            className="w-full rounded-button border border-line bg-surface py-1 pl-5 pr-2 text-right text-sm text-ink outline-none focus:border-accent"
+                            className="w-full rounded-lg border border-border-light bg-surface-container-lowest py-1 pl-5 pr-2 text-right text-body-md text-on-surface outline-none focus:border-primary"
                           />
                         </div>
                         <button
                           type="button"
                           onClick={() => removeScanItem(item.id)}
                           aria-label={`Remove ${item.name || "item"}`}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink"
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
                         >
                           <Icon name="plus" size={12} className="rotate-45" />
                         </button>
                       </div>
                     ))}
                     {scanItems.length === 0 ? (
-                      <p className="px-3 py-4 text-sm text-ink-muted">
+                      <p className="px-3 py-4 text-body-md text-on-surface-variant">
                         No items left — the total below still carries over.
                       </p>
                     ) : null}
                   </div>
 
                   <label className="flex flex-col gap-1.5">
-                    <span className="text-sm font-medium text-ink">Total amount</span>
+                    <span className="text-body-md font-medium text-on-surface">Total amount</span>
                     <div className="relative">
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-muted">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-body-md text-on-surface-variant">
                         $
                       </span>
                       <input
@@ -594,10 +605,10 @@ export function NewSplitForm({
                         value={scanReviewTotal}
                         onChange={(e) => setScanReviewTotal(e.target.value)}
                         placeholder="0.00"
-                        className="w-full rounded-button border border-line bg-surface py-2 pl-7 pr-3 text-sm text-ink outline-none focus:border-accent"
+                        className="w-full rounded-lg border border-border-light bg-surface-container-lowest py-2 pl-7 pr-3 text-body-md text-on-surface outline-none focus:border-primary"
                       />
                     </div>
-                    <span className="text-xs text-ink-muted">
+                    <span className="text-label-md text-on-surface-variant">
                       Items add up to {formatMoney(scanItemsSumCents)}
                       {scanItemsSumCents !== scanReviewTotalCents
                         ? " — adjust the total above if it includes tax or service charge"
@@ -622,9 +633,9 @@ export function NewSplitForm({
               ) : null}
 
               {scanStep === "confirmed" ? (
-                <div className="flex items-center justify-between rounded-button border border-line bg-surface-muted px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-sm text-ink">
-                    <Icon name="bills" size={16} className="text-accent" />
+                <div className="flex items-center justify-between rounded-lg border border-border-light bg-surface-container-low px-3 py-2.5">
+                  <div className="flex items-center gap-2 text-body-md text-on-surface">
+                    <Icon name="bills" size={16} className="text-primary" />
                     <span>
                       {scanItems.length} item{scanItems.length === 1 ? "" : "s"} scanned ·{" "}
                       {formatMoney(totalCents)}
@@ -633,7 +644,7 @@ export function NewSplitForm({
                   <button
                     type="button"
                     onClick={() => setScanStep("review")}
-                    className="text-sm font-medium text-accent hover:text-accent-strong"
+                    className="text-body-md font-medium text-primary hover:underline"
                   >
                     Edit
                   </button>
@@ -645,18 +656,18 @@ export function NewSplitForm({
           {showSharedBottom ? (
             <>
               <div className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">Who&apos;s splitting it?</span>
-                <div className="flex flex-wrap items-center gap-2 rounded-button border border-line bg-surface p-2">
+                <span className="text-body-md font-medium text-on-surface">Who&apos;s splitting it?</span>
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border-light bg-surface-container-lowest p-2">
                   {names.map((n) => (
                     <span
                       key={n}
-                      className="inline-flex items-center gap-1 rounded-full bg-nets-blue-100 py-1 pl-3 pr-1.5 text-sm font-medium text-accent"
+                      className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-1 pl-3 pr-1.5 text-body-md font-medium text-primary"
                     >
                       {participantUserIds[n] ? (
                         <Icon
                           name="check-circle"
                           size={12}
-                          className="text-accent"
+                          className="text-primary"
                           aria-hidden={false}
                           aria-label="Registered user"
                         />
@@ -666,7 +677,7 @@ export function NewSplitForm({
                         type="button"
                         onClick={() => removeName(n)}
                         aria-label={`Remove ${n}`}
-                        className="flex h-4 w-4 items-center justify-center rounded-full text-accent hover:bg-white/60"
+                        className="flex h-4 w-4 items-center justify-center rounded-full text-primary hover:bg-primary/20"
                       >
                         <Icon name="plus" size={11} className="rotate-45" />
                       </button>
@@ -682,7 +693,7 @@ export function NewSplitForm({
                       }
                     }}
                     placeholder="Type a name or email, press Enter"
-                    className="min-w-[140px] flex-1 border-none bg-transparent px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-muted"
+                    className="min-w-[140px] flex-1 border-none bg-transparent px-2 py-1 text-body-md text-on-surface outline-none placeholder:text-on-surface-variant"
                   />
                 </div>
                 {/* Explicit, separate action from Enter-to-add — matching a
@@ -691,7 +702,7 @@ export function NewSplitForm({
                   <button
                     type="button"
                     onClick={() => addLinkedUser(displayedMatch)}
-                    className="inline-flex w-fit items-center gap-1.5 rounded-full border border-accent bg-nets-blue-100/60 px-3 py-1.5 text-xs font-medium text-accent hover:bg-nets-blue-100"
+                    className="inline-flex w-fit items-center gap-1.5 rounded-full border border-primary bg-primary/5 px-3 py-1.5 text-label-md font-medium text-primary hover:bg-primary/10"
                   >
                     <Icon name="check-circle" size={13} />
                     Add {displayedMatch.displayName} as registered user
@@ -700,7 +711,7 @@ export function NewSplitForm({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium text-ink">Split method</span>
+                <span className="text-body-md font-medium text-on-surface">Split method</span>
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -735,15 +746,15 @@ export function NewSplitForm({
 
               {method === "items" ? (
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium text-ink">Who had what?</span>
-                  <div className="divide-y divide-line rounded-button border border-line">
+                  <span className="text-body-md font-medium text-on-surface">Who had what?</span>
+                  <div className="divide-y divide-border-light rounded-lg border border-border-light">
                     {scanItems.map((item) => {
                       const assignees = itemAssignments[item.id] ?? [];
                       return (
                         <div key={item.id} className="flex flex-col gap-2 px-3 py-2.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm text-ink">{item.name || "Unnamed item"}</span>
-                            <span className="text-sm font-medium text-ink">
+                            <span className="text-body-md text-on-surface">{item.name || "Unnamed item"}</span>
+                            <span className="text-body-md font-medium text-on-surface">
                               {formatMoney(Math.round((Number(item.price) || 0) * 100))}
                             </span>
                           </div>
@@ -754,10 +765,10 @@ export function NewSplitForm({
                                 type="button"
                                 onClick={() => toggleItemAssignee(item.id, n)}
                                 className={
-                                  "inline-flex items-center gap-1 " +
+                                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-label-md font-medium " +
                                   (assignees.includes(n)
-                                    ? "rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-white"
-                                    : "rounded-full border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted")
+                                    ? "bg-primary text-on-primary"
+                                    : "border border-border-light text-on-surface-variant hover:bg-surface-container-low")
                                 }
                               >
                                 {participantUserIds[n] ? (
@@ -773,44 +784,44 @@ export function NewSplitForm({
                             ))}
                           </div>
                           {assignees.length === 0 ? (
-                            <p className="text-xs text-danger-strong">Nobody&apos;s assigned to this yet</p>
+                            <p className="text-label-md text-error">Nobody&apos;s assigned to this yet</p>
                           ) : null}
                         </div>
                       );
                     })}
                   </div>
                   {!allItemsAssigned ? (
-                    <p className="text-xs text-danger-strong">Assign every item to at least one person</p>
+                    <p className="text-label-md text-error">Assign every item to at least one person</p>
                   ) : null}
                 </div>
               ) : null}
 
-              <div className="divide-y divide-line rounded-button border border-line">
+              <div className="divide-y divide-border-light rounded-lg border border-border-light">
                 {names.map((n, i) => (
                   <div key={n} className="flex items-center justify-between px-3 py-2">
-                    <span className="inline-flex items-center gap-1.5 text-sm text-ink">
+                    <span className="inline-flex items-center gap-1.5 text-body-md text-on-surface">
                       {n}
                       {participantUserIds[n] ? (
                         <Icon
                           name="check-circle"
                           size={12}
-                          className="text-accent"
+                          className="text-primary"
                           aria-hidden={false}
                           aria-label="Registered user"
                         />
                       ) : null}
                     </span>
                     {method === "equal" ? (
-                      <span className="text-sm font-semibold text-ink">
+                      <span className="text-body-md font-semibold text-on-surface">
                         {formatMoney(equalShares[i] ?? 0)}
                       </span>
                     ) : method === "items" ? (
-                      <span className="text-sm font-semibold text-ink">
+                      <span className="text-body-md font-semibold text-on-surface">
                         {formatMoney(itemSharesByPerson[n] ?? 0)}
                       </span>
                     ) : (
                       <div className="relative w-28">
-                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-muted">
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-label-md text-on-surface-variant">
                           $
                         </span>
                         <input
@@ -822,7 +833,7 @@ export function NewSplitForm({
                             setCustomAmounts((prev) => ({ ...prev, [n]: e.target.value }))
                           }
                           placeholder="0.00"
-                          className="w-full rounded-button border border-line bg-surface py-1 pl-5 pr-2 text-right text-sm text-ink outline-none focus:border-accent"
+                          className="w-full rounded-lg border border-border-light bg-surface-container-lowest py-1 pl-5 pr-2 text-right text-body-md text-on-surface outline-none focus:border-primary"
                         />
                       </div>
                     )}
@@ -831,7 +842,7 @@ export function NewSplitForm({
               </div>
 
               {method === "custom" ? (
-                <p className={`text-xs ${customValid ? "text-ink-muted" : "text-danger-strong"}`}>
+                <p className={`text-label-md ${customValid ? "text-on-surface-variant" : "text-error"}`}>
                   {formatMoney(customSum)} of {formatMoney(totalCents)} allocated
                 </p>
               ) : null}
