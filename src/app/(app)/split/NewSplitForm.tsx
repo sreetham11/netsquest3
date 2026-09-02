@@ -179,7 +179,7 @@ export function NewSplitForm() {
 
   if (!expanded) {
     return (
-      <Button type="button" onClick={() => setExpanded(true)} className="w-full justify-center sm:w-auto">
+      <Button type="button" onClick={() => setExpanded(true)} className="w-full justify-center">
         <Icon name="plus" size={18} />
         New split
       </Button>
@@ -293,7 +293,7 @@ export function NewSplitForm() {
 
               {scanStep === "options" ? (
                 <div className="flex flex-col gap-3">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-2">
                     <button
                       type="button"
                       onClick={() => cameraInputRef.current?.click()}
@@ -362,11 +362,11 @@ export function NewSplitForm() {
               {scanStep === "error" ? (
                 <div className="flex flex-col gap-3 rounded-button border border-line bg-surface-muted px-4 py-5">
                   <p className="text-sm text-danger-strong">{scanError}</p>
-                  <div className="flex gap-2">
-                    <Button type="button" variant="secondary" onClick={() => setScanStep("options")}>
+                  <div className="flex flex-col gap-2">
+                    <Button type="button" onClick={() => setScanStep("options")} className="w-full justify-center">
                       Try again
                     </Button>
-                    <Button type="button" variant="secondary" onClick={backToManual}>
+                    <Button type="button" variant="secondary" onClick={backToManual} className="w-full justify-center">
                       Enter manually instead
                     </Button>
                   </div>
@@ -438,16 +438,16 @@ export function NewSplitForm() {
                     </span>
                   </label>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2">
                     <Button
                       type="button"
                       onClick={confirmScan}
                       disabled={scanReviewTotalCents <= 0}
-                      className="flex-1 justify-center"
+                      className="w-full justify-center"
                     >
                       Looks good, continue
                     </Button>
-                    <Button type="button" variant="secondary" onClick={backToManual}>
+                    <Button type="button" variant="secondary" onClick={backToManual} className="w-full justify-center">
                       Enter manually instead
                     </Button>
                   </div>
@@ -569,7 +569,7 @@ export function NewSplitForm() {
                 </p>
               ) : null}
 
-              <Button type="submit" disabled={!canSubmit || pending} className="justify-center">
+              <Button type="submit" disabled={!canSubmit || pending} className="w-full justify-center">
                 {pending ? "Creating…" : "Create split"}
               </Button>
             </>

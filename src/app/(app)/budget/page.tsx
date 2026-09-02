@@ -53,9 +53,9 @@ export default async function BudgetPage() {
         />
       ) : (
         <>
-          {/* Top summary — a dense at-a-glance list (left) paired with the
-              overall-health ring (right), read as one connected unit. */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Top summary — a dense at-a-glance list, then the overall-health
+              ring below it, stacked as one connected unit. */}
+          <div className="flex flex-col gap-4">
             <Card padded={false}>
               <div className="border-b border-line px-6 py-4">
                 <p className="text-sm font-medium text-ink-muted">Total Spent</p>
@@ -74,7 +74,7 @@ export default async function BudgetPage() {
               </div>
             </Card>
 
-            <Card className="flex items-center gap-6">
+            <Card className="flex flex-col items-center gap-4 text-center">
               <div className="relative flex h-[92px] w-[92px] shrink-0 items-center justify-center">
                 <ProgressRing value={totalRatio} tone={totalTone} size={92} strokeWidth={10} />
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -96,7 +96,7 @@ export default async function BudgetPage() {
 
           {/* Category breakdown — compact mini-cards: "$X left" + bar + "out of $Y".
               Each is independently editable (click Edit to adjust its cap). */}
-          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="mt-6 flex flex-col gap-4">
             {budgets.map((b) => (
               <BudgetCategoryCard
                 key={b.id}

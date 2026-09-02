@@ -1,6 +1,12 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { NETS_PAYMENT_TYPES } from "@/lib/rewards";
+import {
+  CASHBACK_REWARD_NAME,
+  NETS_PAYMENT_TYPES,
+  TIER_MIN_PAYMENT_CENTS,
+  nextTierForMonthlyCount,
+  tierForMonthlyCount,
+} from "@/lib/rewards";
 
 export function startOfThisMonth(): Date {
   const now = new Date();
@@ -45,29 +51,40 @@ export async function getSplits(userId: string) {
   return prisma.split.findMany({
     where: { ownerId: userId },
     orderBy: { createdAt: "desc" },
-    include: { participants: true },
+    // Deterministic participant order: the Spin wheel renders one slice per
+    // participant, so the order must not reshuffle between renders.
+    include: { participants: { orderBy: { id: "asc" } } },
   });
 }
 
-// Everything the Rewards page needs: point balance, tiers (keyed to monthly
-// NETS-payment count), the redemption catalogue, and recent redemption
-// history (so a reload still shows the confirmation — it's a real DB row,
-// not client state).
+// This month's NETS payments that count toward the tier tally. Anti-farming:
+// only payments of $1.00 or more are counted, so a run of tiny transactions
+// can't buy a tier. Spends are stored negative, so "at least $1.00" is
+// amountCents <= -100.
+export async function getMonthlyQualifyingPaymentCount(userId: string) {
+  return prisma.transaction.count({
+    where: {
+      userId,
+      type: { in: [...NETS_PAYMENT_TYPES] },
+      amountCents: { lte: -TIER_MIN_PAYMENT_CENTS },
+      createdAt: { gte: startOfThisMonth() },
+    },
+  });
+}
+
+// Everything the Rewards page needs: point balance, wallet balance (cashback
+// credits into it), the tier ladder + this month's progress, the redemption
+// catalogue, and recent redemption history (so a reload still shows the
+// confirmation — it's a real DB row, not client state).
 export async function getRewards(userId: string) {
-  const [account, tiers, catalogue, monthlyPaymentCount, recentRedemptions] = await Promise.all([
+  const [account, catalogue, monthlyPaymentCount, recentRedemptions] = await Promise.all([
     prisma.account.findUnique({ where: { userId } }),
-    prisma.rewardTier.findMany({
-      where: { userId },
-      orderBy: { sortOrder: "asc" },
+    // Cashback is a redemption *destination*, not a browsable catalogue item.
+    prisma.reward.findMany({
+      where: { name: { not: CASHBACK_REWARD_NAME } },
+      orderBy: { pointCost: "asc" },
     }),
-    prisma.reward.findMany({ orderBy: { pointCost: "asc" } }),
-    prisma.transaction.count({
-      where: {
-        userId,
-        type: { in: [...NETS_PAYMENT_TYPES] },
-        createdAt: { gte: startOfThisMonth() },
-      },
-    }),
+    getMonthlyQualifyingPaymentCount(userId),
     prisma.redemption.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -77,7 +94,10 @@ export async function getRewards(userId: string) {
   ]);
   return {
     points: account?.rewardPoints ?? 0,
-    tiers,
+    balanceCents: account?.balanceCents ?? 0,
+    currency: account?.currency ?? "SGD",
+    currentTier: tierForMonthlyCount(monthlyPaymentCount),
+    nextTier: nextTierForMonthlyCount(monthlyPaymentCount),
     catalogue,
     monthlyPaymentCount,
     recentRedemptions,

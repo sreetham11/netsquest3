@@ -29,7 +29,7 @@ export default function ComponentsDemoPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="flex flex-col gap-3">
         <StatCard label="Balance" value="$1,240.00" hint="Available" />
         <StatCard label="This month" value="$820.50" hint="Spent so far" />
         <StatCard

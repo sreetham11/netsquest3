@@ -1,6 +1,12 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { NETS_PAYMENT_TYPES, pointsForSpendCents } from "@/lib/rewards";
+import {
+  CASHBACK_REWARD_NAME,
+  NETS_PAYMENT_TYPES,
+  POINTS_PER_DOLLAR_REDEEMED,
+  TIERS,
+  pointsForSpendCents,
+} from "@/lib/rewards";
 
 function daysAgo(n: number): Date {
   const d = new Date();
@@ -22,6 +28,14 @@ export async function ensureRewardCatalogue() {
       { name: "Fast Food", pointCost: 1_500, category: "fast-food", sortOrder: 2 },
       { name: "Movie Ticket", pointCost: 3_000, category: "movie-ticket", sortOrder: 3 },
       { name: "NTUC Voucher", pointCost: 5_000, category: "voucher", sortOrder: 4 },
+      // Reserved row backing direct-cashback redemptions (Redemption requires
+      // a reward relation). Hidden from the browsable catalogue by getRewards.
+      {
+        name: CASHBACK_REWARD_NAME,
+        pointCost: POINTS_PER_DOLLAR_REDEEMED,
+        category: "voucher",
+        sortOrder: 99,
+      },
     ],
     skipDuplicates: true,
   });
@@ -133,14 +147,17 @@ export async function ensureUserData(userId: string, email: string) {
     },
   });
 
-  // Tiers key off monthly NETS-payment COUNT, not spend — see src/lib/rewards.ts.
+  // Materialize the tier ladder from the ONE definition in src/lib/rewards.ts
+  // (TIERS), so these rows can never drift from the multipliers the payment
+  // logic actually applies.
   await prisma.rewardTier.createMany({
-    data: [
-      { userId, name: "Bronze", perk: "Standard earn rate", txnCountNeeded: 0, sortOrder: 0 },
-      { userId, name: "Silver", perk: "Early access to promos", txnCountNeeded: 20, sortOrder: 1 },
-      { userId, name: "Gold", perk: "Bonus point multiplier on weekends", txnCountNeeded: 50, sortOrder: 2 },
-      { userId, name: "Platinum", perk: "Premium partner offers + exclusive rewards", txnCountNeeded: 100, sortOrder: 3 },
-    ],
+    data: TIERS.map((tier, i) => ({
+      userId,
+      name: tier.name,
+      perk: tier.perk,
+      txnCountNeeded: tier.minMonthlyPayments,
+      sortOrder: i,
+    })),
   });
 
   // Caps are tuned against the fixed seeded spend above (Food $15.10,

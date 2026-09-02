@@ -30,7 +30,7 @@ export function AddBudgetForm({ existingCategories }: { existingCategories: stri
         type="button"
         onClick={() => setExpanded(true)}
         disabled={available.length === 0}
-        className="w-full justify-center sm:w-auto"
+        className="w-full justify-center"
       >
         <Icon name="plus" size={18} />
         Set budget
@@ -54,8 +54,8 @@ export function AddBudgetForm({ existingCategories }: { existingCategories: stri
         {/* Collapses immediately on submit rather than waiting on the server
             round-trip — category/amount are already client-validated below,
             so there's no meaningful error state worth staying open for. */}
-        <form action={formAction} onSubmit={reset} className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end">
-          <label className="flex flex-1 flex-col gap-1.5">
+        <form action={formAction} onSubmit={reset} className="mt-4 flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-ink">Category</span>
             <select
               name="category"
@@ -71,7 +71,7 @@ export function AddBudgetForm({ existingCategories }: { existingCategories: stri
             </select>
           </label>
 
-          <label className="flex flex-1 flex-col gap-1.5">
+          <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-ink">Monthly cap</span>
             <div className="relative">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-muted">
@@ -91,7 +91,7 @@ export function AddBudgetForm({ existingCategories }: { existingCategories: stri
             </div>
           </label>
 
-          <Button type="submit" disabled={!canSubmit} className="justify-center">
+          <Button type="submit" disabled={!canSubmit} className="w-full justify-center">
             Save
           </Button>
         </form>

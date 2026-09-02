@@ -9,6 +9,7 @@ import { Icon, type IconName } from "@/components/Icon";
 import { formatMoney, formatDayMonth } from "@/lib/format";
 import { toggleSplitParticipantPaid } from "../actions";
 import { NewSplitForm } from "./NewSplitForm";
+import { SpinToDecide } from "./SpinToDecide";
 
 const CATEGORY_ICON: Record<string, IconName> = {
   General: "split",
@@ -52,6 +53,8 @@ export default async function SplitPage() {
             const paidCount = split.participants.filter((p) => p.paid).length;
             const total = split.participants.length;
             const paidProgress = total > 0 ? paidCount / total : 0;
+            const payer =
+              split.participants.find((p) => p.id === split.payerParticipantId) ?? null;
 
             return (
               <Card key={split.id} padded={false} className="overflow-hidden">
@@ -91,13 +94,24 @@ export default async function SplitPage() {
                     </div>
                   </div>
 
+                  {payer ? (
+                    <p className="mt-4 rounded-button bg-surface-muted px-3 py-2 text-sm text-ink">
+                      <span className="font-semibold">{payer.name}</span> fronted this
+                      bill — everyone else owes {payer.name} their share.
+                    </p>
+                  ) : null}
+
                   <div className="mt-6 divide-y divide-line border-t border-line">
                     {split.participants.map((p, i) => (
                       <div key={p.id} className="flex items-center gap-3 py-3">
                         <Avatar name={p.name} index={i} size={32} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-ink">{p.name}</p>
-                          <p className="text-sm text-ink-muted">{formatMoney(p.shareAmountCents)}</p>
+                          <p className="text-sm text-ink-muted">
+                            {formatMoney(p.shareAmountCents)}
+                            {payer && payer.id !== p.id ? ` · owes ${payer.name}` : ""}
+                            {payer && payer.id === p.id ? " · fronted the bill" : ""}
+                          </p>
                         </div>
                         <form action={toggleSplitParticipantPaid}>
                           <input type="hidden" name="participantId" value={p.id} />
@@ -122,6 +136,19 @@ export default async function SplitPage() {
                       </div>
                     ))}
                   </div>
+
+                  <SpinToDecide
+                    splitId={split.id}
+                    split={{
+                      payerParticipantId: split.payerParticipantId,
+                      spunAt: split.spunAt,
+                    }}
+                    participants={split.participants.map((p) => ({
+                      id: p.id,
+                      name: p.name,
+                      shareAmountCents: p.shareAmountCents,
+                    }))}
+                  />
                 </div>
               </Card>
             );

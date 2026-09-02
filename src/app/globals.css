@@ -30,6 +30,17 @@
   --color-nets-blue-700: #0c447c; /* accents, active nav states, links           */
   --color-nets-blue-100: #e4edf5; /* light backgrounds, subtle highlights        */
 
+  /* --- Brand: onboarding accents (pre-login splash + welcome ONLY) -------- */
+  /* Scoped exception, added on explicit request for the pre-login onboarding
+     flow (/splash, /welcome). These are the vivid NETS brand colors used for
+     the splash mark and the "Get Started" gradient CTA. They are NOT part of
+     the in-app palette: inside the authenticated app the rules below still
+     hold (blue is the only CTA color, red only signals negatives/alerts).
+     Do not reach for these on any authenticated screen.                      */
+  --color-brand-red: #ff1f3d; /* NETS Red  — gradient start, splash mark      */
+  --color-brand-blue: #0052ff; /* NETS Blue — gradient end, splash mark       */
+  --color-deep-navy: #0b1426; /* Deep Navy — full-screen splash background    */
+
   /* --- Brand: NETS red  (warnings / alerts / negative amounts ONLY) -------- */
   /* FINAL RULE: red is NEVER a button/CTA color. Blue is the only interactive/
      CTA color. Red only signals warnings, alerts, and negative amounts.        */

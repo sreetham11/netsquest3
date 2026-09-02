@@ -57,10 +57,10 @@ export function BudgetCategoryCard({
         <form
           action={formAction}
           onSubmit={() => setEditing(false)}
-          className="mt-3 flex items-end gap-2"
+          className="mt-3 flex flex-col gap-2"
         >
           <input type="hidden" name="category" value={category} />
-          <label className="flex flex-1 flex-col gap-1.5">
+          <label className="flex flex-col gap-1.5">
             <span className="text-xs text-ink-muted">Monthly cap</span>
             <div className="relative">
               <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-muted">
@@ -78,10 +78,10 @@ export function BudgetCategoryCard({
               />
             </div>
           </label>
-          <Button type="submit" disabled={!(Number(limitAmount) > 0)}>
+          <Button type="submit" disabled={!(Number(limitAmount) > 0)} className="w-full justify-center">
             Save
           </Button>
-          <Button type="button" variant="secondary" onClick={cancelEdit}>
+          <Button type="button" variant="secondary" onClick={cancelEdit} className="w-full justify-center">
             Cancel
           </Button>
         </form>

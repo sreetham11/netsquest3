@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { getAccount, getBills, startOfThisMonth } from "@/lib/data/queries";
+import { maxMilesDiscountCents, pointsForCents } from "@/lib/rewards";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -14,6 +15,7 @@ export default async function BillsPage() {
     getBills(user.id),
   ]);
   const currency = account?.currency ?? "SGD";
+  const points = account?.rewardPoints ?? 0;
   const monthStart = startOfThisMonth();
   const monthlyTotal = bills.reduce((s, b) => s + b.amountCents, 0);
 
@@ -28,10 +30,8 @@ export default async function BillsPage() {
           description="Recurring bills you add will appear here."
         />
       ) : (
-        // Short by nature (a handful of recurring bills) — cap to the remaining
-        // viewport height on desktop and center, instead of leaving a void below.
-        <div className="lg:flex lg:min-h-[calc(100vh-11rem)] lg:flex-col lg:justify-center">
-          <div className="grid grid-cols-2 gap-4">
+        <div>
+          <div className="flex flex-col gap-4">
             <StatCard label="Monthly total" value={formatMoney(monthlyTotal, currency)} />
             <StatCard label="Active bills" value={String(bills.length)} />
           </div>
@@ -39,8 +39,20 @@ export default async function BillsPage() {
           <div className="mt-8 flex flex-col gap-4">
             {bills.map((bill) => {
               const paidThisMonth = bill.lastPaidAt != null && bill.lastPaidAt >= monthStart;
+              // Preview of the Miles discount for this bill. The Server Action
+              // recomputes this from the same helper — the UI never decides
+              // how many points are actually spent.
+              const milesDiscountCents = maxMilesDiscountCents(bill.amountCents, points);
               return (
-                <BillCard key={bill.id} bill={bill} currency={currency} paidThisMonth={paidThisMonth} />
+                <BillCard
+                  key={bill.id}
+                  bill={bill}
+                  currency={currency}
+                  paidThisMonth={paidThisMonth}
+                  pointsBalance={points}
+                  milesDiscountCents={milesDiscountCents}
+                  milesPointsCost={pointsForCents(milesDiscountCents)}
+                />
               );
             })}
           </div>

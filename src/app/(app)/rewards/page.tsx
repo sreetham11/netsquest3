@@ -7,8 +7,14 @@ import { ListRow } from "@/components/ui/ListRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon, type IconName } from "@/components/Icon";
-import { formatDayMonth, formatTime } from "@/lib/format";
+import { formatDayMonth, formatMoney, formatTime } from "@/lib/format";
+import {
+  POINTS_PER_DOLLAR_REDEEMED,
+  TIERS,
+  centsFromPoints,
+} from "@/lib/rewards";
 import { redeemReward } from "../actions";
+import { CashbackForm } from "./CashbackForm";
 
 const REWARD_ICON: Record<string, IconName> = {
   coffee: "coffee",
@@ -77,64 +83,101 @@ export default async function RewardsPage({
 }
 
 async function PointsTab({ userId }: { userId: string }) {
-  const { points, tiers, catalogue, monthlyPaymentCount, recentRedemptions } =
-    await getRewards(userId);
+  const {
+    points,
+    currency,
+    currentTier,
+    nextTier,
+    catalogue,
+    monthlyPaymentCount,
+    recentRedemptions,
+  } = await getRewards(userId);
 
-  const currentTier = [...tiers].reverse().find((t) => monthlyPaymentCount >= t.txnCountNeeded);
-  const nextTier = tiers.find((t) => t.txnCountNeeded > monthlyPaymentCount);
   const tierProgress = nextTier
-    ? (monthlyPaymentCount - (currentTier?.txnCountNeeded ?? 0)) /
-      (nextTier.txnCountNeeded - (currentTier?.txnCountNeeded ?? 0))
+    ? (monthlyPaymentCount - currentTier.minMonthlyPayments) /
+      (nextTier.minMonthlyPayments - currentTier.minMonthlyPayments)
     : 1;
 
-  // Always show exact distance to the next reward, not an abstract balance —
-  // pick the cheapest catalogue item the user hasn't reached yet.
-  const nextReward = catalogue.find((r) => r.pointCost > points);
-  const rewardProgress = nextReward ? points / nextReward.pointCost : 1;
+  const pointsValueCents = centsFromPoints(points);
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="flex flex-col gap-4">
         <Card>
-          <p className="text-sm text-ink-muted">Your points</p>
+          <p className="text-sm text-ink-muted">Your Miles</p>
           <p className="mt-1 text-2xl font-semibold text-ink">{points.toLocaleString()}</p>
-
-          {nextReward ? (
-            <div className="mt-5">
-              <ProgressBar value={rewardProgress} />
-              <p className="mt-1.5 text-xs text-ink-muted">
-                {points.toLocaleString()}/{nextReward.pointCost.toLocaleString()} pts —{" "}
-                {(nextReward.pointCost - points).toLocaleString()} more until {nextReward.name}
-              </p>
-            </div>
-          ) : (
-            <p className="mt-5 text-sm text-ink-muted">
-              You have enough points to redeem anything in the catalogue.
-            </p>
-          )}
+          <p className="mt-1 text-sm text-ink-muted">
+            Worth {formatMoney(pointsValueCents, currency)} ·{" "}
+            {POINTS_PER_DOLLAR_REDEEMED} pts = $1.00
+          </p>
         </Card>
 
         <Card>
           <p className="text-sm text-ink-muted">Your tier</p>
           <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-nets-blue-100 px-3 py-1 text-sm font-medium text-accent">
             <Icon name="rewards" size={14} />
-            {currentTier?.name ?? "Bronze"}
+            {currentTier.name} · {currentTier.multiplier}x
           </div>
 
           {nextTier ? (
             <div className="mt-5">
               <ProgressBar value={tierProgress} />
               <p className="mt-1.5 text-xs text-ink-muted">
-                {monthlyPaymentCount}/{nextTier.txnCountNeeded} NETS payments this month —{" "}
-                {nextTier.txnCountNeeded - monthlyPaymentCount} more to {nextTier.name}
+                {monthlyPaymentCount}/{nextTier.minMonthlyPayments} payments this month for{" "}
+                {nextTier.name} — {nextTier.minMonthlyPayments - monthlyPaymentCount} more at{" "}
+                {nextTier.multiplier}x
               </p>
             </div>
           ) : (
             <p className="mt-5 text-sm text-ink-muted">
-              Top tier unlocked — enjoy the perks below.
+              Top tier unlocked — earning {currentTier.multiplier}x on every NETS payment.
             </p>
           )}
+          <p className="mt-3 text-xs text-ink-muted">
+            Only payments of $1.00 or more count toward your monthly tally.
+          </p>
         </Card>
+      </div>
+
+      {/* The two redemption paths, as separate explicit actions. */}
+      <div className="mt-8">
+        <h2 className="mb-3 text-lg font-semibold text-ink">Use your Miles</h2>
+        <div className="flex flex-col gap-4">
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-muted">
+                <Icon name="bills" size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ink">Apply at checkout</p>
+                <p className="text-sm text-ink-muted">
+                  Knock up to 50% off a bill payment with Miles.
+                </p>
+              </div>
+            </div>
+            <ButtonLink href="/bills" className="mt-4 w-full justify-center">
+              Go to Bills
+            </ButtonLink>
+          </Card>
+
+          <Card>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-muted">
+                <Icon name="arrow-down" size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ink">Redeem for cashback</p>
+                <p className="text-sm text-ink-muted">
+                  Convert Miles straight into your wallet balance.
+                </p>
+              </div>
+            </div>
+            <CashbackForm
+              pointsBalance={points}
+              pointsPerDollar={POINTS_PER_DOLLAR_REDEEMED}
+            />
+          </Card>
+        </div>
       </div>
 
       {/* Tiers reward how OFTEN you choose NETS, not how much you spend. */}
@@ -142,15 +185,15 @@ async function PointsTab({ userId }: { userId: string }) {
         <h2 className="mb-3 text-lg font-semibold text-ink">All tiers</h2>
         <Card padded={false}>
           <div className="divide-y divide-line px-6">
-            {tiers.map((tier) => {
-              const unlocked = monthlyPaymentCount >= tier.txnCountNeeded;
+            {TIERS.map((tier) => {
+              const unlocked = monthlyPaymentCount >= tier.minMonthlyPayments;
               return (
                 <ListRow
-                  key={tier.id}
+                  key={tier.name}
                   leading={<Icon name="rewards" size={16} />}
-                  title={tier.name}
+                  title={`${tier.name} · ${tier.multiplier}x`}
                   subtitle={tier.perk}
-                  value={unlocked ? "Unlocked" : `${tier.txnCountNeeded}+ payments/mo`}
+                  value={unlocked ? "Unlocked" : `${tier.minMonthlyPayments}+ payments/mo`}
                   valueTone={unlocked ? "positive" : "neutral"}
                 />
               );
@@ -169,23 +212,25 @@ async function PointsTab({ userId }: { userId: string }) {
             description="Check back soon for redeemable rewards."
           />
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div className="flex flex-col gap-4">
             {catalogue.map((reward) => {
               const affordable = points >= reward.pointCost;
               return (
-                <Card key={reward.id} className="flex flex-col items-center gap-3 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-muted text-ink-muted">
-                    <Icon name={REWARD_ICON[reward.category] ?? "rewards"} size={22} />
+                <Card key={reward.id} padded={false} className="flex flex-col gap-3 p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-muted">
+                      <Icon name={REWARD_ICON[reward.category] ?? "rewards"} size={22} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-ink">{reward.name}</p>
+                      <p className="mt-0.5 text-sm text-ink-muted">
+                        {reward.pointCost.toLocaleString()} pts
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-ink">{reward.name}</p>
-                    <p className="mt-0.5 text-sm text-ink-muted">
-                      {reward.pointCost.toLocaleString()} pts
-                    </p>
-                  </div>
-                  <form action={redeemReward} className="w-full">
+                  <form action={redeemReward}>
                     <input type="hidden" name="rewardId" value={reward.id} />
-                    <Button type="submit" disabled={!affordable} className="w-full">
+                    <Button type="submit" disabled={!affordable} className="w-full justify-center">
                       Redeem
                     </Button>
                   </form>

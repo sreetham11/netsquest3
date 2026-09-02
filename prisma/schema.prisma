@@ -62,6 +62,21 @@ model Split {
   createdAt        DateTime           @default(now())
   participants     SplitParticipant[]
 
+  // --- Spin to Decide -------------------------------------------------------
+  // One spin, one outcome: who FRONTS the bill. Every other participant then
+  // owes that payer their unchanged share, so nobody absorbs 100% of the bill.
+  // "Owes payer" is DERIVED from the existing shareAmountCents — no money
+  // fields are duplicated and the base split math is untouched.
+  //
+  // References SplitParticipant.id. Kept as a plain id rather than a Prisma
+  // relation to avoid a circular Split <-> SplitParticipant relation (and the
+  // delete-ordering hazard that comes with it); the Server Action only ever
+  // writes an id belonging to this split.
+  //
+  // spunAt set == already spun. A split may be spun ONCE.
+  payerParticipantId String?
+  spunAt             DateTime?
+
   @@index([ownerId])
 }
 

@@ -26,7 +26,7 @@ export default async function TransactionsPage() {
     <div>
       <PageHeader title="Transactions" subtitle="All simulated money movement on your wallet." />
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="flex flex-col gap-4">
         <StatCard label="Money in (this month)" value={formatMoney(moneyIn, currency)} />
         <StatCard label="Money out (this month)" value={formatMoney(Math.abs(moneyOut), currency)} tone="negative" />
       </div>
