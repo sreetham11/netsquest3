@@ -18,6 +18,7 @@ export function BillCard({
   bill,
   currency,
   paidThisMonth,
+  dueSoon,
   pointsBalance,
   milesDiscountCents,
   milesPointsCost,
@@ -33,6 +34,9 @@ export function BillCard({
   };
   currency: string;
   paidThisMonth: boolean;
+  // Computed server-side (src/lib/bills.ts) from dueDayOfMonth + paidThisMonth
+  // — pure display flag, not re-derived here.
+  dueSoon: boolean;
   // Points on hand, the discount those points can actually cover for THIS
   // bill, and what that discount costs in points — all computed server-side
   // (the 50% cap lives in the Server Action; this is only the preview of it,
@@ -62,9 +66,19 @@ export function BillCard({
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-ink">{bill.name}</p>
-          <p className="truncate text-sm text-ink-muted">
-            Due {ordinal(bill.dueDayOfMonth)} · {bill.category}
-            {bill.autopay ? " · Autopay on" : ""}
+          {/* Due-soon (or overdue) and unpaid: warning icon + danger token.
+              Otherwise unchanged neutral styling. */}
+          <p
+            className={
+              "flex items-center gap-1 text-sm " +
+              (dueSoon ? "font-medium text-danger-strong" : "text-ink-muted")
+            }
+          >
+            {dueSoon ? <Icon name="warning" size={13} className="shrink-0" /> : null}
+            <span className="truncate">
+              Due {ordinal(bill.dueDayOfMonth)} · {bill.category}
+              {bill.autopay ? " · Autopay on" : ""}
+            </span>
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">

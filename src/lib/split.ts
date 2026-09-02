@@ -5,6 +5,12 @@
 // derived from the existing shareAmountCents, so no money is duplicated and no
 // participant ever absorbs 100% of the bill.
 
+// Participants are names only (no linked accounts, see getSplits) — this is
+// the name that stands in for the account holder within that list, both as
+// the default first participant and, after a spin, when checking whether the
+// current user is the resolved payer.
+export const YOU_PARTICIPANT_NAME = "You";
+
 export type SpinParticipant = {
   id: string;
   name: string;

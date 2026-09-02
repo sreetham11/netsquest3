@@ -43,7 +43,7 @@ export default function ComponentsDemoPage() {
       <div className="mt-6">
         <Card padded={false}>
           <div className="border-b border-line px-6 py-4">
-            <h2 className="text-lg font-semibold text-ink">Recent activity</h2>
+            <h2 className="text-xl font-bold text-ink">Recent activity</h2>
           </div>
           <div className="divide-y divide-line px-6">
             {activity.map((row) => (

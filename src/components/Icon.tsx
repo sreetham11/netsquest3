@@ -11,8 +11,6 @@ export type IconName =
   | "bills"
   | "budget"
   | "plus"
-  | "arrow-up"
-  | "arrow-down"
   | "logout"
   | "coffee"
   | "bubble-tea"
@@ -26,14 +24,18 @@ export type IconName =
   | "pin"
   | "contactless"
   | "camera"
-  | "upload";
+  | "upload"
+  | "contacts"
+  | "warning"
+  | "settings"
+  | "lock"
+  | "face";
 
 const paths: Record<IconName, React.ReactNode> = {
   home: <path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5" />,
   transactions: (
     <>
-      <path d="M4 7h11M4 7l3-3M4 7l3 3" />
-      <path d="M20 17H9M20 17l-3-3M20 17l-3 3" />
+      <path d="M3 12h4l2 7 4-14 2 7h6" />
     </>
   ),
   split: (
@@ -67,12 +69,10 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
-  "arrow-up": <path d="M12 19V5M6 11l6-6 6 6" />,
-  "arrow-down": <path d="M12 5v14M6 13l6 6 6-6" />,
   logout: (
     <>
-      <path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3" />
-      <path d="M10 8l-4 4 4 4M6 12h11" />
+      <circle cx="12" cy="13" r="7" />
+      <path d="M12 6v4" />
     </>
   ),
   coffee: (
@@ -147,16 +147,55 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   contactless: (
     <>
-      <circle cx="7" cy="17" r="1" fill="currentColor" stroke="none" />
-      <path d="M10 14a5.7 5.7 0 0 1 0 6" />
-      <path d="M13 11.5a9.3 9.3 0 0 1 0 11" />
-      <path d="M16 9a13 13 0 0 1 0 12" />
+      {/* A card, not a bare dot, emitting the waves — bare arcs+dot alone is
+          literally the wifi/signal-icon shape, so no amount of relabeling
+          fixes the ambiguity; anchoring it to a card silhouette is what
+          real-world "tap to pay" signage does to disambiguate from wifi. */}
+      <rect x="1.5" y="7" width="9" height="10" rx="2" />
+      <path d="M13.5 9.5a4 4 0 0 1 0 5" />
+      <path d="M16.5 8a6.5 6.5 0 0 1 0 8" />
+      <path d="M19.5 6.5a9.5 9.5 0 0 1 0 11" />
     </>
   ),
   camera: (
     <>
       <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1-2h7l1 2h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9z" />
       <circle cx="12" cy="13" r="3.2" />
+    </>
+  ),
+  contacts: (
+    <>
+      <circle cx="12" cy="8.5" r="3.5" />
+      <path d="M5 20c0-3.6 3.1-5.5 7-5.5s7 1.9 7 5.5" />
+    </>
+  ),
+  warning: (
+    <>
+      <path d="M12 3.5L21 19.5H3L12 3.5z" strokeLinejoin="round" />
+      <path d="M12 9.5v4" />
+      <circle cx="12" cy="16.3" r="0.75" fill="currentColor" stroke="none" />
+    </>
+  ),
+  settings: (
+    <>
+      <path d="M4 7h9M17 7h3" />
+      <circle cx="14" cy="7" r="2" />
+      <path d="M4 17h3M11 17h9" />
+      <circle cx="8" cy="17" r="2" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="9.5" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  face: (
+    <>
+      <rect x="6" y="4" width="12" height="16" rx="6" />
+      <circle cx="9.5" cy="11" r="0.75" fill="currentColor" stroke="none" />
+      <circle cx="14.5" cy="11" r="0.75" fill="currentColor" stroke="none" />
+      <path d="M9.5 14.5c.7.7 1.5 1 2.5 1s1.8-.3 2.5-1" />
     </>
   ),
   upload: (

@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/Icon";
 import { formatMoney, formatSignedMoney, formatDayMonth } from "@/lib/format";
 import { formatLocalWithSgd } from "@/lib/currency";
+import { flagForCountry } from "@/lib/countryFlag";
 import { maxMilesDiscountCents, pointsForCents } from "@/lib/rewards";
 
 // Overseas is a CURRENCY + REWARDS view, not a merchant directory: no named
@@ -73,7 +74,7 @@ export default async function OverseasPage() {
           </Card>
 
           <div className="mt-8">
-            <h2 className="mb-3 text-lg font-semibold text-ink">Overseas transactions</h2>
+            <h2 className="mb-3 text-xl font-bold text-ink">Overseas transactions</h2>
             <div className="flex flex-col gap-4">
               {txns.map((t) => {
                 const sgdCents = Math.abs(t.amountCents);
@@ -90,7 +91,7 @@ export default async function OverseasPage() {
                           {t.description}
                         </p>
                         <p className="truncate text-sm text-ink-muted">
-                          {t.country} · {formatDayMonth(t.createdAt)}
+                          {flagForCountry(t.country)}{t.country} · {formatDayMonth(t.createdAt)}
                         </p>
                       </div>
                       <span className="shrink-0 text-sm font-semibold text-danger-strong">

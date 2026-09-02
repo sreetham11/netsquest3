@@ -21,6 +21,21 @@ model Account {
   rewardPoints Int      @default(0) // 5 pts per S$1 of NETS payment, see src/lib/rewards.ts
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // Auto top-up: single settings blob per account, not a separate table —
+  // there's exactly one of these per user, so it belongs alongside
+  // balanceCents/rewardPoints as scalar Account state. Threshold/amount are
+  // nullable rather than defaulting to 0: null means "never configured",
+  // distinct from a real (if unlikely) 0 value. See triggerAutoTopupIfNeeded
+  // in src/lib/autoTopup.ts for the trigger logic.
+  //
+  // These columns already exist in the live (shared) database — added by
+  // another codebase's migration on this same Supabase project — this just
+  // declares them so Prisma Client on this branch can read/write them too.
+  // No new migration needed.
+  autoTopupEnabled        Boolean @default(false)
+  autoTopupThresholdCents Int?
+  autoTopupAmountCents    Int?
 }
 
 // Simulated money movement. amountCents < 0 = debit/spend, > 0 = credit.
@@ -88,7 +103,31 @@ model SplitParticipant {
   paid             Boolean @default(false)
   split            Split   @relation(fields: [splitId], references: [id], onDelete: Cascade)
 
+  // A participant is EITHER a saved Contact or a genuine one-off freeform
+  // name. `name` is always written (and never rewritten afterwards) so a
+  // split's history stays readable even if the contact is later renamed or
+  // deleted — hence onDelete: SetNull rather than Cascade. Deleting a contact
+  // must never delete or blank out a past split.
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
   @@index([splitId])
+  @@index([contactId])
+}
+
+// A saved payee the user manages themselves — no invites, no real accounts,
+// no lookup against any directory. phoneNumber is COSMETIC ONLY: it is
+// displayed PayNow-style so a saved payee looks familiar, and is never used
+// for messaging, notifications, or matching to another user.
+model Contact {
+  id           String             @id @default(cuid())
+  userId       String
+  name         String
+  phoneNumber  String?
+  createdAt    DateTime           @default(now())
+  participants SplitParticipant[]
+
+  @@index([userId])
 }
 
 // Per-user reward tiers, keyed to monthly NETS-payment COUNT (not spend $).

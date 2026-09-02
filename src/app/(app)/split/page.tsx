@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/auth";
-import { getSplits } from "@/lib/data/queries";
+import { getSplits, getOwedToUser, getContacts } from "@/lib/data/queries";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
+import { StatCard } from "@/components/ui/StatCard";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -25,18 +26,28 @@ const CATEGORY_ICON: Record<string, IconName> = {
 // for the same treatment but has NOT been touched — confirm before extending.
 export default async function SplitPage() {
   const user = await requireUser();
-  const splits = await getSplits(user.id);
+  const [splits, owed, contacts] = await Promise.all([
+    getSplits(user.id),
+    getOwedToUser(user.id),
+    getContacts(user.id),
+  ]);
 
   return (
     <div>
       <PageHeader title="Split" subtitle="Instant bill splitting — no invites, no waiting." />
 
-      <p className="text-base font-medium text-ink">
-        You covered dinner. Split makes sure it doesn&apos;t stay that way.
-      </p>
+      {owed.owedCents > 0 ? (
+        <div className="mt-4">
+          <StatCard
+            label="You're owed"
+            value={formatMoney(owed.owedCents)}
+            hint={`Across ${owed.splitCount} split${owed.splitCount === 1 ? "" : "s"}`}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-6">
-        <NewSplitForm />
+        <NewSplitForm contacts={contacts} />
       </div>
 
       {splits.length === 0 ? (
@@ -85,12 +96,25 @@ export default async function SplitPage() {
 
                   <div className="mt-5">
                     <div className="flex items-center justify-between">
-                      <span className="rounded-full bg-nets-blue-100 px-3 py-1 text-sm font-medium text-accent">
-                        {paidCount} of {total} paid
+                      {/* Solid accent fill, not the pale bg-nets-blue-100 tint —
+                          this is the "did everyone pay" signal for the whole
+                          card, so it earns real color instead of reading as
+                          just another muted label. Swaps to the check icon
+                          once fully settled, for a distinct payoff moment. */}
+                      <span
+                        className={
+                          "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium " +
+                          (paidCount === total
+                            ? "bg-accent-strong text-white"
+                            : "bg-accent text-white")
+                        }
+                      >
+                        {paidCount === total ? <Icon name="check" size={13} /> : null}
+                        {paidCount === total ? "All settled" : `${paidCount} of ${total} paid`}
                       </span>
                     </div>
                     <div className="mt-3">
-                      <ProgressBar value={paidProgress} size="lg" />
+                      <ProgressBar value={paidProgress} tone="accent" size="lg" />
                     </div>
                   </div>
 
@@ -101,38 +125,47 @@ export default async function SplitPage() {
                     </p>
                   ) : null}
 
+                  {/* Row layout: avatar far left, name (+ status) in the
+                      middle, amount BOLD and right-aligned right next to the
+                      paid toggle — the amount and paid-state are the two
+                      things a glance needs, so they sit together. */}
                   <div className="mt-6 divide-y divide-line border-t border-line">
                     {split.participants.map((p, i) => (
                       <div key={p.id} className="flex items-center gap-3 py-3">
                         <Avatar name={p.name} index={i} size={32} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-ink">{p.name}</p>
-                          <p className="text-sm text-ink-muted">
-                            {formatMoney(p.shareAmountCents)}
-                            {payer && payer.id !== p.id ? ` · owes ${payer.name}` : ""}
-                            {payer && payer.id === p.id ? " · fronted the bill" : ""}
-                          </p>
+                          {payer ? (
+                            <p className="truncate text-xs text-ink-muted">
+                              {payer.id === p.id ? "Fronted the bill" : `Owes ${payer.name}`}
+                            </p>
+                          ) : null}
                         </div>
-                        <form action={toggleSplitParticipantPaid}>
-                          <input type="hidden" name="participantId" value={p.id} />
-                          <button
-                            type="submit"
-                            className={
-                              p.paid
-                                ? "inline-flex items-center gap-1 rounded-full bg-accent-strong px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
-                                : "inline-flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-muted"
-                            }
-                          >
-                            {p.paid ? (
-                              <>
-                                <Icon name="check" size={13} />
-                                Paid
-                              </>
-                            ) : (
-                              "Mark paid"
-                            )}
-                          </button>
-                        </form>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <span className="text-base font-bold text-ink">
+                            {formatMoney(p.shareAmountCents)}
+                          </span>
+                          <form action={toggleSplitParticipantPaid}>
+                            <input type="hidden" name="participantId" value={p.id} />
+                            <button
+                              type="submit"
+                              className={
+                                p.paid
+                                  ? "inline-flex items-center gap-1 rounded-full bg-accent-strong px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                                  : "inline-flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-medium text-ink-muted hover:bg-surface-muted"
+                              }
+                            >
+                              {p.paid ? (
+                                <>
+                                  <Icon name="check" size={13} />
+                                  Paid
+                                </>
+                              ) : (
+                                "Mark paid"
+                              )}
+                            </button>
+                          </form>
+                        </div>
                       </div>
                     ))}
                   </div>

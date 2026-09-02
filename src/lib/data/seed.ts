@@ -147,6 +147,17 @@ export async function ensureUserData(userId: string, email: string) {
     },
   });
 
+  // Saved payees, so Split has something to pick from on first use instead of
+  // an empty chip row. Names match the seeded splits' participants where it
+  // makes sense. Phone numbers are cosmetic display data only.
+  await prisma.contact.createMany({
+    data: [
+      { userId, name: "Cara", phoneNumber: "+65 9123 4567" },
+      { userId, name: "Zoe", phoneNumber: "+65 8234 5678" },
+      { userId, name: "Wei Jie", phoneNumber: "+65 9345 6789" },
+    ],
+  });
+
   // Materialize the tier ladder from the ONE definition in src/lib/rewards.ts
   // (TIERS), so these rows can never drift from the multipliers the payment
   // logic actually applies.

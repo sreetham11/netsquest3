@@ -32,13 +32,17 @@
 
   /* --- Brand: onboarding accents (pre-login splash + welcome ONLY) -------- */
   /* Scoped exception, added on explicit request for the pre-login onboarding
-     flow (/splash, /welcome). These are the vivid NETS brand colors used for
-     the splash mark and the "Get Started" gradient CTA. They are NOT part of
-     the in-app palette: inside the authenticated app the rules below still
-     hold (blue is the only CTA color, red only signals negatives/alerts).
-     Do not reach for these on any authenticated screen.                      */
+     flow (/splash, /welcome). These are the NETS brand colors used for the
+     splash mark and the "Get Started" gradient CTA. Red stays a distinct,
+     more vivid brand red than the in-app --color-danger family (deliberate —
+     see below); blue does NOT: brand-blue is pinned to the exact same value
+     as --color-nets-blue-700 (the in-app --color-accent) so there is only
+     ONE blue in the whole product, pre-login and in-app alike, rather than
+     two similar-but-not-identical blues. Do not reach for these on any
+     authenticated screen — that still holds for brand-red/deep-navy; for
+     blue specifically it's moot, since brand-blue now IS accent.            */
   --color-brand-red: #ff1f3d; /* NETS Red  — gradient start, splash mark      */
-  --color-brand-blue: #0052ff; /* NETS Blue — gradient end, splash mark       */
+  --color-brand-blue: var(--color-nets-blue-700); /* = --color-accent, consolidated */
   --color-deep-navy: #0b1426; /* Deep Navy — full-screen splash background    */
 
   /* --- Brand: NETS red  (warnings / alerts / negative amounts ONLY) -------- */
@@ -46,6 +50,40 @@
      CTA color. Red only signals warnings, alerts, and negative amounts.        */
   --color-nets-red-900: #791f1f; /* negative amounts, strong warnings           */
   --color-nets-red-700: #a32d2d; /* alert emphasis, sparingly — not a CTA        */
+
+  /* --- Reward tiers (Rewards -> Points "Your tier" card ONLY) ------------- */
+  /* Scoped exception, added on explicit request/confirmation to give the
+     tier card a real bronze/silver/gold gradient that visually upgrades as
+     the user progresses — the base grey/blue/red palette above has no metal
+     tones at all. Each pair is a dark->light stop for that tier's gradient,
+     chosen to stay legible under white card text at both ends (same
+     white-on-dark-fill contract the Home balance card and buttons already
+     use). Do NOT reach for these outside the tier card. */
+  --color-tier-bronze-900: #5c3a21; /* Bronze gradient, dark stop */
+  --color-tier-bronze-700: #a0672e; /* Bronze gradient, light stop */
+  --color-tier-silver-900: #64748b; /* Silver gradient, dark stop */
+  --color-tier-silver-700: #94a3b8; /* Silver gradient, light stop */
+  --color-tier-gold-900: #92720c; /* Gold gradient, dark stop */
+  --color-tier-gold-700: #c99a2e; /* Gold gradient, light stop */
+
+  /* --- Spending category chart (Home's donut + legend ONLY) --------------- */
+  /* Scoped exception, same rationale as the tier tokens above: a category
+     breakdown chart genuinely needs categories to read as DIFFERENT colors,
+     not different shades of one color. Revision: the first version of this
+     block reused --color-accent (the app's own navy-ish brand blue,
+     #0c447c) as the top category's color — with only one category
+     populated, that's the ONLY color visible, and it still reads as "dark
+     navy" even though it's technically a different token than the original
+     bug. Fixed by giving the chart its own fully independent 6-color set,
+     including its own brighter blue, so no chart slot ever falls back to
+     the brand-blue button color. Do NOT reach for these outside the
+     spending category chart (donut + its dot legend). */
+  --color-chart-blue: #2563eb;
+  --color-chart-teal: #0d9488;
+  --color-chart-orange: #f97316;
+  --color-chart-purple: #7c3aed;
+  --color-chart-pink: #db2777;
+  --color-chart-green: #16a34a;
 
   /* --- Neutral gray scale (text, borders, backgrounds) -------------------- */
   --color-neutral-50: #fafafa;
@@ -80,7 +118,7 @@
   --radius-card: 12px; /* every card, identically      */
   --radius-button: 8px; /* every button / pill, identically */
   --radius-full: 9999px; /* avatars / circular only       */
-  --radius-wallet: 16px; /* Home wallet-card stack ONLY — explicit, requested exception */
+  --radius-wallet: 20px; /* Home wallet-card stack ONLY — explicit, requested exception */
 
   /* ==========================================================================
      SEMANTIC TOKENS — encode the NETS usage philosophy.
@@ -126,6 +164,12 @@
 
   --color-danger: var(--color-nets-red-700);
   --color-danger-strong: var(--color-nets-red-900);
+
+  /* --- Scan & Pay intro animation ONLY (see AppShell/ScanPayIntro) -------- */
+  /* Registers the two named `animate-*` utilities Tailwind v4 generates from
+     --animate-*; matching @keyframes are defined below, outside @theme. */
+  --animate-nfc-ping: nfc-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  --animate-face-scan: face-scan 1.4s ease-in-out infinite;
 }
 
 /* ----------------------------------------------------------------------------
@@ -138,4 +182,27 @@ body {
   background: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
+}
+
+/* Scan & Pay intro animation keyframes — see the --animate-* tokens above.
+   Scoped to that one overlay; nothing else references these. */
+@keyframes nfc-ping {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes face-scan {
+  0%,
+  100% {
+    transform: translateY(-90%);
+  }
+  50% {
+    transform: translateY(90%);
+  }
 }

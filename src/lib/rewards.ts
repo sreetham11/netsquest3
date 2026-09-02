@@ -42,9 +42,9 @@ export type Tier = {
 };
 
 export const TIERS: readonly Tier[] = [
-  { name: "Bronze", perk: "1x points on every NETS payment", minMonthlyPayments: 0, multiplier: 1 },
-  { name: "Silver", perk: "1.2x points on every NETS payment", minMonthlyPayments: 10, multiplier: 1.2 },
-  { name: "Gold", perk: "1.5x points on every NETS payment", minMonthlyPayments: 25, multiplier: 1.5 },
+  { name: "Bronze", perk: "1x points on every NETS payment.", minMonthlyPayments: 0, multiplier: 1 },
+  { name: "Silver", perk: "1.2x points on every NETS payment, once you hit 10+ payments this month.", minMonthlyPayments: 10, multiplier: 1.2 },
+  { name: "Gold", perk: "1.5x points on every NETS payment, once you hit 25+ payments this month.", minMonthlyPayments: 25, multiplier: 1.5 },
 ] as const;
 
 // Anti-farming: only payments of $1.00 or more count toward the monthly tier

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CompassMark } from "@/components/CompassMark";
 import { MobileFrame } from "@/components/MobileFrame";
+import { PeopleSilhouettes } from "@/components/PeopleSilhouettes";
 import { Icon, type IconName } from "@/components/Icon";
 
 // Three one-line highlights, to give the middle of the screen something to do
@@ -27,13 +28,18 @@ export default async function WelcomePage() {
 
   return (
     <MobileFrame>
-      {/* Subtle navy-tinted gradient washing down into the canvas token, so
-          the screen reads as a designed surface rather than an empty page. */}
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-linear-to-b from-deep-navy/10 via-canvas to-canvas px-4 pb-8 pt-8">
+      {/* Same scattered-silhouette background texture as /splash, replacing
+          the old flat navy-tinted gradient — consistent treatment across
+          both pre-login screens. bg-canvas is the plain base fill it sits
+          on top of. */}
+      <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-canvas px-4 pb-8 pt-8">
+        <PeopleSilhouettes variant="compact" />
+
         {/* Everything above the CTA is centred in the free space, so leftover
             height is split evenly above and below the block instead of piling
-            into one dead gap. */}
-        <div className="flex flex-1 flex-col justify-center">
+            into one dead gap. relative so it (and the CTA below) paint above
+            the absolute background layer. */}
+        <div className="relative flex flex-1 flex-col justify-center">
         {/* Hero: the same compass mark as /splash, larger, over a soft radial
             glow built from the two brand colors. */}
         <div className="relative flex justify-center py-2">
@@ -74,7 +80,7 @@ export default async function WelcomePage() {
         {/* Primary CTA sits in the thumb zone at the bottom of the frame. */}
         <Link
           href="/login"
-          className="mt-8 w-full rounded-full bg-linear-to-r from-brand-red to-brand-blue px-4 py-3.5 text-center text-base font-semibold text-white transition-opacity duration-200 hover:opacity-90"
+          className="relative mt-8 w-full rounded-full bg-linear-to-r from-brand-red to-brand-blue px-4 py-3.5 text-center text-base font-semibold text-white transition-opacity duration-200 hover:opacity-90"
         >
           Get Started
         </Link>

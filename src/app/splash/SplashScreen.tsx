@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CompassMark } from "@/components/CompassMark";
 import { MobileFrame } from "@/components/MobileFrame";
+import { PeopleSilhouettes } from "@/components/PeopleSilhouettes";
 
 const SPLASH_MS = 2500;
 
@@ -30,11 +31,17 @@ export function SplashScreen() {
         type="button"
         onClick={() => router.replace("/welcome")}
         aria-label="Skip to welcome"
-        className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 bg-deep-navy"
+        className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-hidden bg-deep-navy"
       >
+        {/* Background texture layer — behind everything else below, purely
+            decorative. `absolute` takes it out of this flex container's
+            layout entirely, so it doesn't affect the centering of the
+            compass/wordmark. */}
+        <PeopleSilhouettes />
+
         <span
           className={
-            "transition-all duration-700 ease-out " +
+            "relative transition-all duration-700 ease-out " +
             (shown ? "scale-100 opacity-100" : "scale-95 opacity-0")
           }
         >
@@ -43,7 +50,7 @@ export function SplashScreen() {
 
         <span
           className={
-            "text-2xl font-semibold tracking-tight text-white transition-opacity duration-700 ease-out " +
+            "relative text-2xl font-semibold tracking-tight text-white transition-opacity duration-700 ease-out " +
             (shown ? "opacity-100 delay-150" : "opacity-0")
           }
         >

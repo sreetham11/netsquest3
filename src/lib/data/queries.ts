@@ -7,6 +7,7 @@ import {
   nextTierForMonthlyCount,
   tierForMonthlyCount,
 } from "@/lib/rewards";
+import { YOU_PARTICIPANT_NAME } from "@/lib/split";
 
 export function startOfThisMonth(): Date {
   const now = new Date();
@@ -55,6 +56,34 @@ export async function getSplits(userId: string) {
     // participant, so the order must not reshuffle between renders.
     include: { participants: { orderBy: { id: "asc" } } },
   });
+}
+
+// How much is owed to the current user across their splits. A split only
+// has a recorded payer once Spin to Decide has run (payerParticipantId set);
+// unspun splits don't attribute the bill to anyone, so they're excluded —
+// same rule the Split page uses to decide when to show "owes {payer}" copy.
+// Owed = unpaid participants' shares in splits where "You" (see
+// YOU_PARTICIPANT_NAME) is the resolved payer.
+export async function getOwedToUser(userId: string): Promise<{ owedCents: number; splitCount: number }> {
+  const splits = await prisma.split.findMany({
+    where: { ownerId: userId, payerParticipantId: { not: null } },
+    include: { participants: true },
+  });
+
+  let owedCents = 0;
+  let splitCount = 0;
+  for (const split of splits) {
+    const payer = split.participants.find((p) => p.id === split.payerParticipantId);
+    if (payer?.name !== YOU_PARTICIPANT_NAME) continue;
+    const unpaidCents = split.participants
+      .filter((p) => p.id !== payer.id && !p.paid)
+      .reduce((sum, p) => sum + p.shareAmountCents, 0);
+    if (unpaidCents > 0) {
+      owedCents += unpaidCents;
+      splitCount += 1;
+    }
+  }
+  return { owedCents, splitCount };
 }
 
 // This month's NETS payments that count toward the tier tally. Anti-farming:
@@ -138,20 +167,44 @@ export async function getSpendingPlan(userId: string) {
 }
 
 // Monthly spend per category (absolute cents), for budget tracking.
+//
+// "Overseas" is a special case: no transaction is ever WRITTEN with category
+// "Overseas" (a Uniqlo Osaka purchase keeps category "Shopping" — real
+// category taxonomy, unaffected). It's computed here as a separate
+// cross-cutting cut of the same month's spend, reusing
+// getOverseasTransactions' country-not-null filter, so it counts toward the
+// Overseas budget cap on top of counting toward its real category's cap.
+// That double-count is intentional (a purchase abroad is genuinely both
+// "Shopping" spend and "Overseas" spend) — the underlying rows are never
+// changed. getRecentSpendByCategory (Home's Top Spending Categories) is
+// deliberately NOT given this treatment, so "Overseas" never appears there.
 export async function getMonthlySpendByCategory(
   userId: string,
 ): Promise<Record<string, number>> {
-  const rows = await prisma.transaction.groupBy({
-    by: ["category"],
-    where: {
-      userId,
-      amountCents: { lt: 0 },
-      createdAt: { gte: startOfThisMonth() },
-    },
-    _sum: { amountCents: true },
-  });
+  const since = startOfThisMonth();
+  const [rows, overseas] = await Promise.all([
+    prisma.transaction.groupBy({
+      by: ["category"],
+      where: {
+        userId,
+        amountCents: { lt: 0 },
+        createdAt: { gte: since },
+      },
+      _sum: { amountCents: true },
+    }),
+    prisma.transaction.aggregate({
+      where: {
+        userId,
+        amountCents: { lt: 0 },
+        createdAt: { gte: since },
+        country: { not: null },
+      },
+      _sum: { amountCents: true },
+    }),
+  ]);
   const map: Record<string, number> = {};
   for (const r of rows) map[r.category] = Math.abs(r._sum.amountCents ?? 0);
+  map.Overseas = Math.abs(overseas._sum.amountCents ?? 0);
   return map;
 }
 
@@ -196,5 +249,15 @@ export async function getBills(userId: string) {
   return prisma.recurringBill.findMany({
     where: { userId },
     orderBy: { dueDayOfMonth: "asc" },
+  });
+}
+
+// Saved payees the user manages themselves — scoped to the owner like all
+// other user data. Contacts are names/numbers for faster, consistent entry in
+// Split; they are not real accounts and are never looked up externally.
+export async function getContacts(userId: string) {
+  return prisma.contact.findMany({
+    where: { userId },
+    orderBy: { name: "asc" },
   });
 }

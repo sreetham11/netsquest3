@@ -4,6 +4,10 @@ const STROKE = {
   accent: "stroke-accent",
   "accent-strong": "stroke-accent-strong",
   danger: "stroke-danger",
+  // Nothing spent yet is good news, not an error — a pale fill (the same
+  // light-blue token used for subtle highlights elsewhere) reads as "all
+  // clear" instead of the alarming/empty look a 0%-drawn accent arc gives.
+  empty: "stroke-nets-blue-100",
 } as const;
 
 export function ProgressRing({

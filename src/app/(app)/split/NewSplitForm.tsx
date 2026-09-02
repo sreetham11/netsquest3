@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useActionState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/Icon";
 import { formatMoney } from "@/lib/format";
 import { DEMO_RECEIPT, type ParsedReceipt } from "@/lib/receipt";
-import { createSplit, type CreateSplitState } from "../actions";
+import { createSplit, createContact, type CreateSplitState } from "../actions";
+import { YOU_PARTICIPANT_NAME } from "@/lib/split";
+
+// Saved payees offered as tap-to-add chips. Purely an entry shortcut — a
+// contact is a name/number the user manages, not a real account.
+export type ContactChip = { id: string; name: string; phoneNumber: string | null };
+
+// A person on the split is EITHER a saved contact (contactId set) or a
+// genuine one-off freeform name (contactId null). Both always carry a name.
+type Person = { name: string; contactId: string | null };
 
 const CATEGORIES: Array<{ value: string; label: string; icon: IconName }> = [
   { value: "General", label: "General", icon: "split" },
@@ -16,8 +26,6 @@ const CATEGORIES: Array<{ value: string; label: string; icon: IconName }> = [
   { value: "ride", label: "Ride", icon: "ride" },
   { value: "grocery", label: "Groceries", icon: "grocery" },
 ];
-
-const DEFAULT_NAME = "You";
 
 type EntryMode = "manual" | "scan";
 type ScanStep = "options" | "loading" | "review" | "confirmed" | "error";
@@ -39,13 +47,25 @@ function draftItemsFrom(receipt: ParsedReceipt): DraftItem[] {
   }));
 }
 
-export function NewSplitForm() {
-  const [expanded, setExpanded] = useState(false);
-  const [title, setTitle] = useState("");
-  const [totalAmount, setTotalAmount] = useState("");
+export function NewSplitForm({ contacts }: { contacts: ContactChip[] }) {
+  const searchParams = useSearchParams();
+  const prefillMerchant = searchParams.get("merchant") ?? "";
+  const prefillAmount = searchParams.get("amount") ?? "";
+
+  const [expanded, setExpanded] = useState(Boolean(prefillMerchant || prefillAmount));
+  const [title, setTitle] = useState(prefillMerchant);
+  const [totalAmount, setTotalAmount] = useState(prefillAmount);
   const [category, setCategory] = useState("General");
-  const [names, setNames] = useState<string[]>([DEFAULT_NAME]);
+  const [people, setPeople] = useState<Person[]>([
+    { name: YOU_PARTICIPANT_NAME, contactId: null },
+  ]);
   const [nameInput, setNameInput] = useState("");
+  const [showNameInput, setShowNameInput] = useState(false);
+  // The freeform name just added, offered for one-tap saving. Null = no offer
+  // showing. Saving is always optional — dismissing keeps the participant.
+  const [offerSaveName, setOfferSaveName] = useState<string | null>(null);
+  const [saveContactError, setSaveContactError] = useState("");
+  const [savingContact, startSaveContact] = useTransition();
   const [method, setMethod] = useState<"equal" | "custom">("equal");
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
 
@@ -70,8 +90,11 @@ export function NewSplitForm() {
     setTitle("");
     setTotalAmount("");
     setCategory("General");
-    setNames([DEFAULT_NAME]);
+    setPeople([{ name: YOU_PARTICIPANT_NAME, contactId: null }]);
     setNameInput("");
+    setShowNameInput(false);
+    setOfferSaveName(null);
+    setSaveContactError("");
     setMethod("equal");
     setCustomAmounts({});
     setExpanded(false);
@@ -84,37 +107,83 @@ export function NewSplitForm() {
 
   const totalCents = Math.round((Number(totalAmount) || 0) * 100);
   const equalShares = useMemo(
-    () => distributeEqually(totalCents, names.length),
-    [totalCents, names.length],
+    () => distributeEqually(totalCents, people.length),
+    [totalCents, people.length],
   );
 
+  // Shares stay keyed by name: names are unique within a split (both the chip
+  // toggle and the freeform add reject an existing name).
   const customCentsFor = (name: string) => Math.round((Number(customAmounts[name]) || 0) * 100);
-  const customSum = names.reduce((s, n) => s + customCentsFor(n), 0);
+  const customSum = people.reduce((s, p) => s + customCentsFor(p.name), 0);
   const customValid = totalCents > 0 && customSum === totalCents;
 
-  const participants = names.map((name, i) => ({
-    name,
-    shareAmountCents: method === "equal" ? equalShares[i] : customCentsFor(name),
+  const participants = people.map((person, i) => ({
+    name: person.name,
+    contactId: person.contactId,
+    shareAmountCents: method === "equal" ? equalShares[i] : customCentsFor(person.name),
   }));
 
   const canSubmit =
     title.trim().length > 0 &&
     totalCents > 0 &&
-    names.length > 0 &&
+    people.length > 0 &&
     (method === "equal" || customValid);
 
-  function addName() {
-    const n = nameInput.trim();
-    if (!n || names.includes(n)) {
+  const hasName = (name: string) => people.some((p) => p.name === name);
+
+  // Tap a saved contact to add them; tap again to take them back off.
+  function toggleContact(contact: ContactChip) {
+    setPeople((prev) => {
+      if (prev.some((p) => p.contactId === contact.id)) {
+        return prev.filter((p) => p.contactId !== contact.id);
+      }
+      // Guard the case where the same name was already typed freeform.
+      if (prev.some((p) => p.name === contact.name)) return prev;
+      return [...prev, { name: contact.name, contactId: contact.id }];
+    });
+  }
+
+  // "+ New" — a name that isn't saved yet. Added as a one-off, then offered
+  // (never forced) for saving as a contact.
+  function addFreeformName() {
+    const name = nameInput.trim();
+    if (!name || hasName(name)) {
       setNameInput("");
       return;
     }
-    setNames((prev) => [...prev, n]);
+    setPeople((prev) => [...prev, { name, contactId: null }]);
     setNameInput("");
+    setShowNameInput(false);
+    setSaveContactError("");
+    // Only worth offering if it isn't already in their contacts.
+    setOfferSaveName(contacts.some((c) => c.name === name) ? null : name);
   }
 
-  function removeName(n: string) {
-    setNames((prev) => prev.filter((x) => x !== n));
+  function removePerson(name: string) {
+    setPeople((prev) => prev.filter((p) => p.name !== name));
+    if (offerSaveName === name) setOfferSaveName(null);
+  }
+
+  // One tap: save the just-added freeform name as a contact and link this
+  // participant to it, so the next split can pick them from a chip.
+  function saveOfferedContact() {
+    const name = offerSaveName;
+    if (!name) return;
+    setSaveContactError("");
+
+    startSaveContact(async () => {
+      const formData = new FormData();
+      formData.append("name", name);
+      const result = await createContact(null, formData);
+      if (!result?.ok) {
+        setSaveContactError(result?.error ?? "Couldn't save that contact.");
+        return;
+      }
+      setPeople((prev) =>
+        prev.map((p) => (p.name === name ? { ...p, contactId: result.contact.id } : p)),
+      );
+      setOfferSaveName(null);
+    });
   }
 
   async function handleReceiptFile(file: File | undefined) {
@@ -479,36 +548,112 @@ export function NewSplitForm() {
             <>
               <div className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium text-ink">Who&apos;s splitting it?</span>
-                <div className="flex flex-wrap items-center gap-2 rounded-button border border-line bg-surface p-2">
-                  {names.map((n) => (
+
+                {/* Saved contacts as tap-to-add chips — the fast path. */}
+                {contacts.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {contacts.map((contact) => {
+                      const selected = people.some((p) => p.contactId === contact.id);
+                      return (
+                        <button
+                          key={contact.id}
+                          type="button"
+                          onClick={() => toggleContact(contact)}
+                          aria-pressed={selected}
+                          className={
+                            "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors " +
+                            (selected
+                              ? "border-accent bg-accent text-white"
+                              : "border-line bg-surface text-ink hover:bg-surface-muted")
+                          }
+                        >
+                          {selected ? <Icon name="check" size={13} /> : null}
+                          {contact.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {/* Everyone currently on the split — saved or one-off. */}
+                <div className="mt-1 flex flex-wrap items-center gap-2 rounded-button border border-line bg-surface p-2">
+                  {people.map((person) => (
                     <span
-                      key={n}
+                      key={person.name}
                       className="inline-flex items-center gap-1 rounded-full bg-nets-blue-100 py-1 pl-3 pr-1.5 text-sm font-medium text-accent"
                     >
-                      {n}
+                      {person.name}
                       <button
                         type="button"
-                        onClick={() => removeName(n)}
-                        aria-label={`Remove ${n}`}
+                        onClick={() => removePerson(person.name)}
+                        aria-label={`Remove ${person.name}`}
                         className="flex h-4 w-4 items-center justify-center rounded-full text-accent hover:bg-white/60"
                       >
                         <Icon name="plus" size={11} className="rotate-45" />
                       </button>
                     </span>
                   ))}
-                  <input
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addName();
-                      }
-                    }}
-                    placeholder="Type a name, press Enter"
-                    className="min-w-[140px] flex-1 border-none bg-transparent px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-muted"
-                  />
+
+                  {showNameInput ? (
+                    <input
+                      autoFocus
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addFreeformName();
+                        }
+                        if (e.key === "Escape") {
+                          setNameInput("");
+                          setShowNameInput(false);
+                        }
+                      }}
+                      onBlur={addFreeformName}
+                      placeholder="Type a name, press Enter"
+                      className="min-w-[140px] flex-1 border-none bg-transparent px-2 py-1 text-sm text-ink outline-none placeholder:text-ink-muted"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowNameInput(true)}
+                      className="inline-flex items-center gap-1 rounded-full border border-dashed border-line px-3 py-1 text-sm font-medium text-ink-muted hover:bg-surface-muted hover:text-ink"
+                    >
+                      <Icon name="plus" size={12} />
+                      New
+                    </button>
+                  )}
                 </div>
+
+                {/* Optional capture — dismissing keeps the one-off name. */}
+                {offerSaveName ? (
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-button bg-surface-muted px-3 py-2">
+                    <span className="text-sm text-ink">
+                      Save <span className="font-medium">{offerSaveName}</span> as a contact?
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={saveOfferedContact}
+                        disabled={savingContact}
+                        className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-strong disabled:opacity-60"
+                      >
+                        {savingContact ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOfferSaveName(null)}
+                        className="rounded-full border border-line px-3 py-1 text-xs font-medium text-ink-muted hover:bg-surface"
+                      >
+                        Not now
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {saveContactError ? (
+                  <p className="text-xs text-danger-strong">{saveContactError}</p>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -534,9 +679,9 @@ export function NewSplitForm() {
               </div>
 
               <div className="divide-y divide-line rounded-button border border-line">
-                {names.map((n, i) => (
-                  <div key={n} className="flex items-center justify-between px-3 py-2">
-                    <span className="text-sm text-ink">{n}</span>
+                {people.map((person, i) => (
+                  <div key={person.name} className="flex items-center justify-between px-3 py-2">
+                    <span className="text-sm text-ink">{person.name}</span>
                     {method === "equal" ? (
                       <span className="text-sm font-semibold text-ink">
                         {formatMoney(equalShares[i] ?? 0)}
@@ -550,9 +695,9 @@ export function NewSplitForm() {
                           type="number"
                           min="0"
                           step="0.01"
-                          value={customAmounts[n] ?? ""}
+                          value={customAmounts[person.name] ?? ""}
                           onChange={(e) =>
-                            setCustomAmounts((prev) => ({ ...prev, [n]: e.target.value }))
+                            setCustomAmounts((prev) => ({ ...prev, [person.name]: e.target.value }))
                           }
                           placeholder="0.00"
                           className="w-full rounded-button border border-line bg-surface py-1 pl-5 pr-2 text-right text-sm text-ink outline-none focus:border-accent"

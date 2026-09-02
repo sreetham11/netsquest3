@@ -14,6 +14,7 @@ import {
   tierForMonthlyCount,
 } from "@/lib/rewards";
 import { getMonthlyQualifyingPaymentCount, startOfThisMonth } from "@/lib/data/queries";
+import { triggerAutoTopupIfNeeded } from "@/lib/autoTopup";
 
 // All of these are SIMULATED money movements — they only write rows to Postgres
 // via Prisma. No real payment processing.
@@ -63,7 +64,7 @@ export async function createSplit(
     return { ok: false };
   }
 
-  let participants: Array<{ name: string; shareAmountCents: number }>;
+  let participants: Array<{ name: string; shareAmountCents: number; contactId?: string | null }>;
   try {
     participants = JSON.parse(String(formData.get("participants") ?? "[]"));
   } catch {
@@ -72,7 +73,11 @@ export async function createSplit(
   if (!Array.isArray(participants) || participants.length === 0) return { ok: false };
 
   const cleaned = participants
-    .map((p) => ({ name: String(p?.name ?? "").trim(), shareAmountCents: Math.round(Number(p?.shareAmountCents)) }))
+    .map((p) => ({
+      name: String(p?.name ?? "").trim(),
+      shareAmountCents: Math.round(Number(p?.shareAmountCents)),
+      contactId: p?.contactId ? String(p.contactId) : null,
+    }))
     .filter((p) => p.name && Number.isFinite(p.shareAmountCents) && p.shareAmountCents >= 0);
   if (cleaned.length === 0) return { ok: false };
 
@@ -81,13 +86,37 @@ export async function createSplit(
   const sum = cleaned.reduce((s, p) => s + p.shareAmountCents, 0);
   if (sum !== totalAmountCents) return { ok: false };
 
+  // Only link contacts this user actually owns — a contactId from the client
+  // is otherwise an arbitrary id. Anything unrecognised falls back to a
+  // freeform participant, which is a valid state, so it isn't an error.
+  const ownedContactIds = new Set(
+    (
+      await prisma.contact.findMany({
+        where: {
+          userId: user.id,
+          id: { in: cleaned.map((p) => p.contactId).filter((id): id is string => Boolean(id)) },
+        },
+        select: { id: true },
+      })
+    ).map((c) => c.id),
+  );
+
   await prisma.split.create({
     data: {
       ownerId: user.id,
       title,
       totalAmountCents,
       category,
-      participants: { create: cleaned.map((p) => ({ name: p.name, shareAmountCents: p.shareAmountCents })) },
+      participants: {
+        create: cleaned.map((p) => ({
+          // `name` is written for BOTH kinds of participant and never rewritten,
+          // so the split still reads correctly if the contact is later renamed
+          // or deleted.
+          name: p.name,
+          shareAmountCents: p.shareAmountCents,
+          contactId: p.contactId && ownedContactIds.has(p.contactId) ? p.contactId : null,
+        })),
+      },
     },
   });
 
@@ -200,16 +229,20 @@ export async function payBill(_prev: PayBillState, formData: FormData): Promise<
   const { multiplier } = tierForMonthlyCount(monthlyPaymentCount);
   const pointsEarned = pointsForSpendCents(chargeCents, multiplier);
 
-  await prisma.$transaction([
-    prisma.account.update({
+  // Interactive transaction (not the array form) so triggerAutoTopupIfNeeded
+  // can read the just-decremented balance and, if needed, credit it back
+  // within the SAME commit — the bill payment and any resulting auto-topup
+  // are genuinely atomic, not two separate writes.
+  await prisma.$transaction(async (tx) => {
+    await tx.account.update({
       where: { userId: user.id },
       data: {
         balanceCents: { decrement: chargeCents },
         // One net movement so earn and spend settle atomically together.
         rewardPoints: { increment: pointsEarned - pointsSpent },
       },
-    }),
-    prisma.transaction.create({
+    });
+    await tx.transaction.create({
       data: {
         userId: user.id,
         description: bill.name,
@@ -217,12 +250,13 @@ export async function payBill(_prev: PayBillState, formData: FormData): Promise<
         amountCents: -chargeCents,
         type: "BILL",
       },
-    }),
-    prisma.recurringBill.update({
+    });
+    await tx.recurringBill.update({
       where: { id: bill.id },
       data: { lastPaidAt: new Date() },
-    }),
-  ]);
+    });
+    await triggerAutoTopupIfNeeded(tx, user.id);
+  });
 
   revalidatePath("/bills");
   revalidatePath("/home");
@@ -368,6 +402,187 @@ export async function saveBudgetCap(
   });
 
   revalidatePath("/budget");
+  revalidatePath("/home");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Contacts — saved payees, managed entirely by the user.
+//
+// These are names/numbers for faster, consistent entry in Split. There is NO
+// messaging, invite, notification, or user-lookup logic tied to phoneNumber —
+// it is stored and displayed, nothing more. Creating a contact does not create
+// or link a real account, and never moves money.
+// ---------------------------------------------------------------------------
+
+// Returns the created row on success so the Split form can link the
+// participant it just saved to its new contactId without a round-trip.
+export type SaveContactState =
+  | { ok: true; contact: { id: string; name: string } }
+  | { ok: false; error: string }
+  | null;
+
+export async function createContact(
+  _prev: SaveContactState,
+  formData: FormData,
+): Promise<SaveContactState> {
+  const user = await requireUser();
+  const name = String(formData.get("name") ?? "").trim();
+  // Optional and cosmetic — kept as free text so any local format works.
+  const phoneNumber = String(formData.get("phoneNumber") ?? "").trim();
+
+  if (!name) return { ok: false, error: "Enter a name." };
+
+  // Same-name contacts would be indistinguishable as chips, so treat the name
+  // as the natural key per user rather than silently creating a duplicate.
+  const existing = await prisma.contact.findFirst({
+    where: { userId: user.id, name },
+  });
+  if (existing) return { ok: false, error: `${name} is already saved.` };
+
+  const contact = await prisma.contact.create({
+    data: { userId: user.id, name, phoneNumber: phoneNumber || null },
+  });
+
+  revalidatePath("/contacts");
+  revalidatePath("/split");
+  return { ok: true, contact: { id: contact.id, name: contact.name } };
+}
+
+export async function deleteContact(formData: FormData) {
+  const user = await requireUser();
+  const contactId = String(formData.get("contactId") ?? "");
+  if (!contactId) return;
+
+  // Scoped delete: deleteMany with the ownership filter means another user's
+  // id in the form is a no-op rather than a delete. Past splits keep working —
+  // SplitParticipant.contactId is ON DELETE SET NULL and the participant's
+  // name stays on the row.
+  await prisma.contact.deleteMany({ where: { id: contactId, userId: user.id } });
+
+  revalidatePath("/contacts");
+  revalidatePath("/split");
+}
+
+// ---------------------------------------------------------------------------
+// Scan & Pay — a real merchant payment (Scan & Pay's actual destination).
+// Same debit + points-earning shape as payBill (same tier-multiplier system,
+// same "insufficient balance" guard), just for a one-off merchant/amount
+// instead of a recurring bill. No QR/camera scanning in this pass — merchant
+// + amount are entered directly (quick-pick or manual), same as the rest of
+// this app's "simulated, not really OCR/NFC hardware" conventions elsewhere
+// (e.g. Split's receipt scan falls back to manual entry too).
+// ---------------------------------------------------------------------------
+
+export type MakePaymentState =
+  | { ok: true; newBalanceCents: number; pointsEarned: number }
+  | { ok: false; error: string }
+  | null;
+
+export async function makePayment(
+  _prev: MakePaymentState,
+  formData: FormData,
+): Promise<MakePaymentState> {
+  const user = await requireUser();
+  const merchant = String(formData.get("merchant") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim() || "Shopping";
+  const amountCents = Math.round(Number(formData.get("amount")) * 100);
+
+  if (!merchant) return { ok: false, error: "Enter who you're paying." };
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    return { ok: false, error: "Enter an amount greater than $0." };
+  }
+
+  const [account, monthlyPaymentCount] = await Promise.all([
+    prisma.account.findUnique({ where: { userId: user.id } }),
+    getMonthlyQualifyingPaymentCount(user.id),
+  ]);
+  if (!account) return { ok: false, error: "Something went wrong. Try again." };
+
+  if (account.balanceCents < amountCents) {
+    return { ok: false, error: "Insufficient balance to complete this payment." };
+  }
+
+  // Same tier-multiplier formula payBill uses — one earn-rate system, not a
+  // second one invented for this entry point.
+  const { multiplier } = tierForMonthlyCount(monthlyPaymentCount);
+  const pointsEarned = pointsForSpendCents(amountCents, multiplier);
+
+  let newBalanceCents = account.balanceCents - amountCents;
+  await prisma.$transaction(async (tx) => {
+    await tx.account.update({
+      where: { userId: user.id },
+      data: {
+        balanceCents: { decrement: amountCents },
+        rewardPoints: { increment: pointsEarned },
+      },
+    });
+    await tx.transaction.create({
+      data: {
+        userId: user.id,
+        description: merchant,
+        category,
+        amountCents: -amountCents,
+        type: "PAYMENT",
+      },
+    });
+    await triggerAutoTopupIfNeeded(tx, user.id);
+    // Re-read AFTER the possible auto-topup so the success message reflects
+    // the real final balance, not the pre-topup figure.
+    const final = await tx.account.findUnique({ where: { userId: user.id } });
+    if (final) newBalanceCents = final.balanceCents;
+  });
+
+  revalidatePath("/home");
+  revalidatePath("/rewards");
+  revalidatePath("/transactions");
+  return { ok: true, newBalanceCents, pointsEarned };
+}
+
+// ---------------------------------------------------------------------------
+// Auto Top-up settings — local to the Account row, checked by
+// triggerAutoTopupIfNeeded after every balance-decreasing write.
+// ---------------------------------------------------------------------------
+
+export type SaveAutoTopupState = { ok: boolean; error?: string } | null;
+
+export async function saveAutoTopupSettings(
+  _prev: SaveAutoTopupState,
+  formData: FormData,
+): Promise<SaveAutoTopupState> {
+  const user = await requireUser();
+  const enabled = formData.get("enabled") === "on";
+  const thresholdCents = Math.round((Number(formData.get("threshold")) || 0) * 100);
+  const topupAmountCents = Math.round((Number(formData.get("amount")) || 0) * 100);
+
+  // Only enforced strictly when actually turning it ON — a disabled row's
+  // numbers are inert, so they're saved as-is (even 0/blank) rather than
+  // rejected, the same way re-opening this form later should show whatever
+  // was last typed.
+  if (enabled) {
+    if (!(thresholdCents > 0)) {
+      return { ok: false, error: "Enter a threshold greater than $0." };
+    }
+    if (!(topupAmountCents > 0)) {
+      return { ok: false, error: "Enter a top-up amount greater than $0." };
+    }
+    // Guarantees the post-topup balance always clears the threshold, so a
+    // single top-up can never immediately re-trigger itself.
+    if (topupAmountCents <= thresholdCents) {
+      return { ok: false, error: "Top-up amount must be more than the threshold." };
+    }
+  }
+
+  await prisma.account.update({
+    where: { userId: user.id },
+    data: {
+      autoTopupEnabled: enabled,
+      autoTopupThresholdCents: thresholdCents || null,
+      autoTopupAmountCents: topupAmountCents || null,
+    },
+  });
+
+  revalidatePath("/auto-topup");
   revalidatePath("/home");
   return { ok: true };
 }

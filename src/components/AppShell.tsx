@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { MobileFrame } from "@/components/MobileFrame";
+import { ScanPayIntro, type ScanPayStage } from "@/components/ScanPayIntro";
 import {
   MAIN_NAV_ITEMS,
   MORE_NAV_ITEMS,
@@ -13,6 +14,12 @@ import {
   type NavItem,
 } from "@/lib/nav";
 import { logout } from "@/app/auth/actions";
+
+// How long each beat of the Scan & Pay intro auto-plays before advancing —
+// tap-to-skip (ScanPayIntro's onSkip) can always cut this short. Combined
+// worst case is 1400 + 1500 = 2.9s, under the 3-4s budget.
+const NFC_STAGE_MS = 1400;
+const FACEID_STAGE_MS = 1500;
 
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -25,10 +32,22 @@ function isActive(pathname: string, href: string) {
 // max-w-*/container/mx-auto/side-padding.
 //
 // Bottom nav is 5 slots: Home, Activity, the raised Scan & Pay action,
-// Rewards, and More (a bottom sheet holding Split/Overseas/Bills/Budget).
+// Rewards, and More (a bottom sheet holding Overseas/Contacts/Profile — see
+// src/lib/nav.ts for why Split/Bills/Budget are NOT in it).
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
+  // null = not showing. Tapping the raised action starts at "nfc" instead of
+  // navigating immediately; the effect below advances it to "faceid" and
+  // then navigates to SCAN_ACTION.href — the actual destination (the
+  // existing scan/split page) is unchanged, this only delays reaching it.
+  const [scanStage, setScanStage] = useState<ScanPayStage | null>(null);
+
+  const finishScanIntro = useCallback(() => {
+    setScanStage(null);
+    router.push(SCAN_ACTION.href);
+  }, [router]);
 
   // Escape closes the sheet, like any dismissible overlay.
   useEffect(() => {
@@ -39,6 +58,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [moreOpen]);
+
+  // Escape also skips the Scan & Pay intro straight to its destination.
+  useEffect(() => {
+    if (!scanStage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") finishScanIntro();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scanStage, finishScanIntro]);
+
+  // Auto-advances nfc -> faceid -> navigate. Purely a timed UI transition —
+  // no Server Action, no data fetch, nothing payment-related happens here.
+  useEffect(() => {
+    if (!scanStage) return;
+    if (scanStage === "nfc") {
+      const timer = setTimeout(() => setScanStage("faceid"), NFC_STAGE_MS);
+      return () => clearTimeout(timer);
+    }
+    const timer = setTimeout(finishScanIntro, FACEID_STAGE_MS);
+    return () => clearTimeout(timer);
+  }, [scanStage, finishScanIntro]);
 
   const leftTabs = MAIN_NAV_ITEMS.slice(0, NAV_ITEMS_BEFORE_CENTER);
   const rightTabs = MAIN_NAV_ITEMS.slice(NAV_ITEMS_BEFORE_CENTER);
@@ -111,6 +152,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
+      {/* Scan & Pay intro — sits above the More sheet (z-40 > z-30). Only
+          mounted while playing, so it never intercepts clicks otherwise. */}
+      {scanStage ? <ScanPayIntro stage={scanStage} onSkip={finishScanIntro} /> : null}
+
       {/* Bottom tabs — 5 slots, center raised out of the bar */}
       <nav className="relative z-10 grid shrink-0 grid-cols-5 border-t border-line bg-surface">
         {leftTabs.map((item) => (
@@ -118,10 +163,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ))}
 
         {/* Center slot: the raised circular action. Absolutely positioned and
-            pulled above the bar so it pops out rather than sitting flush. */}
+            pulled above the bar so it pops out rather than sitting flush.
+            A button, not a Link — tapping starts the Scan & Pay intro
+            (nfc -> faceid), which navigates to SCAN_ACTION.href itself once
+            done/skipped, rather than navigating immediately. */}
         <div className="relative flex flex-col items-center justify-end py-2">
-          <Link
-            href={SCAN_ACTION.href}
+          <button
+            type="button"
+            onClick={() => setScanStage("nfc")}
             aria-label={SCAN_ACTION.label}
             aria-current={isActive(pathname, SCAN_ACTION.href) ? "page" : undefined}
             className={
@@ -132,15 +181,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             }
           >
             <Icon name={SCAN_ACTION.icon} size={24} />
-          </Link>
-          <span
-            className={
-              "text-xs leading-none " +
-              (isActive(pathname, SCAN_ACTION.href) ? "text-accent" : "text-ink-muted")
-            }
-          >
-            {SCAN_ACTION.shortLabel}
-          </span>
+          </button>
+          {/* No text label here (unlike the other 4 tabs) — it was crowding
+              this slot, and the raised, larger, distinctly-colored circular
+              button is already the visually loudest element in the bar, so
+              it reads as its own tappable action without one. */}
         </div>
 
         {rightTabs.map((item) => (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { CompassMark } from "@/components/CompassMark";
 import { MobileFrame } from "@/components/MobileFrame";
@@ -33,6 +34,27 @@ export function AuthForm({ mode, action }: Props) {
           brand mark occupies the space above the heading, so this reads as
           composition rather than the empty gap it used to be. */}
       <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-deep-navy px-4 pb-8 pt-8">
+        {/* Marina Bay Sands background photo — cover + centered so it scales
+            to fill the frame at any height without distorting. Sits behind
+            everything else (first in DOM, position:absolute with no
+            z-index, so later siblings stack on top of it naturally). */}
+        <Image
+          src="/login-marina-bay.jpg"
+          alt=""
+          fill
+          priority
+          sizes="390px"
+          className="object-cover"
+        />
+
+        {/* Dark gradient overlay — deep-navy (the existing brand token, not
+            raw black) so the photo tints toward the app's own pre-login
+            palette instead of reading as a generic dark filter. Darkest at
+            the bottom where the form sits, since white input LABELS (the
+            inputs themselves are opaque white fields, already readable
+            regardless) need the most contrast there. */}
+        <div className="absolute inset-0 bg-gradient-to-b from-deep-navy/60 via-deep-navy/80 to-deep-navy/95" />
+
         {/* Two thin light-streak curves across the lower background. Pure SVG,
             low opacity, decorative only. */}
         <svg

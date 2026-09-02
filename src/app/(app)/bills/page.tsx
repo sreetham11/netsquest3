@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getAccount, getBills, startOfThisMonth } from "@/lib/data/queries";
 import { maxMilesDiscountCents, pointsForCents } from "@/lib/rewards";
+import { isDueSoon } from "@/lib/bills";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -49,6 +50,7 @@ export default async function BillsPage() {
                   bill={bill}
                   currency={currency}
                   paidThisMonth={paidThisMonth}
+                  dueSoon={isDueSoon(bill.dueDayOfMonth, paidThisMonth)}
                   pointsBalance={points}
                   milesDiscountCents={milesDiscountCents}
                   milesPointsCost={pointsForCents(milesDiscountCents)}

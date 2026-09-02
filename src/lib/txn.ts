@@ -1,11 +1,22 @@
 import type { IconName } from "@/components/Icon";
+import { categoryIcon } from "@/lib/categoryIcon";
 
-// Picks a leading icon for a transaction row from its type/sign.
-export function txnLeadingIcon(type: string, amountCents: number): IconName {
+// Picks a leading icon for a transaction row. Deliberately NON-directional:
+// money in vs out is signalled once, by the amount's color (see amountTone),
+// so the icon is free to say what the transaction actually was. Directional
+// up/down arrows were removed app-wide as a redundant second signal.
+export function txnLeadingIcon(
+  type: string,
+  amountCents: number,
+  category: string,
+): IconName {
   if (type === "REWARD") return "rewards"; // point redemption, not money movement
-  if (amountCents > 0) return "arrow-down"; // money in
   if (type === "BILL") return "bills";
-  return "arrow-up"; // money out
+  if (type === "TOPUP") return "plus"; // funds added — no spend category to show
+  // Everything else is identified by its spending category, the same map the
+  // Budget page uses. Categories outside that taxonomy (e.g. "Income") fall
+  // back to the generic finance icon inside categoryIcon().
+  return categoryIcon(category);
 }
 
 export function amountTone(type: string, amountCents: number): "positive" | "negative" | "neutral" {
@@ -21,4 +32,56 @@ export function amountTone(type: string, amountCents: number): "positive" | "neg
 // Cashback redemptions DO move money, so they show their amount as normal.
 export function txnValue(type: string, amountCents: number, formatted: string): string {
   return type === "REWARD" && amountCents === 0 ? "Redeemed" : formatted;
+}
+
+// Splitting only makes sense for money going out (a purchase you covered),
+// not top-ups/refunds/rewards — so this returns null for anything else.
+export function splitHref(description: string, amountCents: number): string | null {
+  if (amountCents >= 0) return null;
+  const params = new URLSearchParams({
+    merchant: description,
+    amount: (Math.abs(amountCents) / 100).toFixed(2),
+  });
+  return `/split?${params.toString()}`;
+}
+
+// A transaction is flagged when it's more than this many times the user's
+// average spend in that category (based on their own history, not any
+// external benchmark — simple rule-based comparison, no ML).
+const HIGH_SPEND_MULTIPLIER = 1.5;
+
+type CategoryStats = { totalCents: number; count: number };
+
+// Pass the full transaction history for the user (not just what's on
+// screen) — averages are meaningless over a truncated recent-N list.
+export function categorySpendStats(
+  txns: Array<{ category: string; amountCents: number }>,
+): Record<string, CategoryStats> {
+  const stats: Record<string, CategoryStats> = {};
+  for (const t of txns) {
+    if (t.amountCents >= 0) continue; // only outgoing spend has a "usual" amount
+    const s = stats[t.category] ?? { totalCents: 0, count: 0 };
+    s.totalCents += Math.abs(t.amountCents);
+    s.count += 1;
+    stats[t.category] = s;
+  }
+  return stats;
+}
+
+// Compares a transaction against the average of the OTHER transactions in
+// its category (excluding itself) — otherwise a single outlier would just
+// inflate its own average and could never be flagged. Needs at least one
+// other same-category transaction to have anything to compare against.
+export function isHigherThanUsual(
+  txn: { category: string; amountCents: number },
+  stats: Record<string, CategoryStats>,
+): boolean {
+  if (txn.amountCents >= 0) return false;
+  const s = stats[txn.category];
+  if (!s || s.count < 2) return false;
+
+  const amountAbs = Math.abs(txn.amountCents);
+  const othersCount = s.count - 1;
+  const othersAvg = (s.totalCents - amountAbs) / othersCount;
+  return othersAvg > 0 && amountAbs > HIGH_SPEND_MULTIPLIER * othersAvg;
 }
