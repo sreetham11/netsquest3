@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { CompassMark } from "@/components/CompassMark";
 import { MobileFrame } from "@/components/MobileFrame";
+import { NetsCredit } from "@/components/NetsCredit";
 import type { AuthState } from "./actions";
 
 type Props = {
@@ -96,8 +97,9 @@ export function AuthForm({ mode, action }: Props) {
             </span>
           </div>
 
-          <p className="mt-5 text-center text-2xl font-bold tracking-tight text-white">
-            NETS QUEST
+          <p className="mt-5 flex items-center justify-center gap-1.5 text-2xl font-bold tracking-tight text-white">
+            <Image src="/nets-logo.png" alt="NETS" width={627} height={163} className="h-6 w-auto" />
+            <span>QUEST</span>
           </p>
           <p className="mt-1 text-center text-sm text-nets-blue-100">
             Find your next reward
@@ -164,6 +166,13 @@ export function AuthForm({ mode, action }: Props) {
             {isSignup ? "Sign in" : "Sign up"}
           </Link>
         </p>
+
+        {/* Real NETS credit — small, separate, at the very bottom, distinct
+            from the CompassMark + "NETS QUEST" hero above which stays the
+            main focus. */}
+        <div className="relative pt-6">
+          <NetsCredit tone="on-dark" width={120} />
+        </div>
       </main>
     </MobileFrame>
   );

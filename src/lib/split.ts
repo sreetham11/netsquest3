@@ -38,3 +38,19 @@ export function payerOf(
   if (!split.payerParticipantId) return null;
   return participants.find((p) => p.id === split.payerParticipantId) ?? null;
 }
+
+// Bridges the Budget/transaction category taxonomy (categoryIcon.ts — "Food",
+// "Transport", ...) to Split's own separate, lowercase taxonomy (NewSplitForm
+// — "food", "ride", ..., "General"). The two are deliberately not merged (see
+// categoryIcon.ts), so a transaction's category needs mapping, not passing
+// through, when it pre-fills a split. Unmapped categories fall back to
+// "General" rather than a value NewSplitForm's <select> wouldn't recognize.
+const BUDGET_TO_SPLIT_CATEGORY: Record<string, string> = {
+  Food: "food",
+  Groceries: "grocery",
+  Transport: "ride",
+};
+
+export function budgetCategoryToSplitCategory(category: string): string {
+  return BUDGET_TO_SPLIT_CATEGORY[category] ?? "General";
+}

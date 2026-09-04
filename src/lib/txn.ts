@@ -1,5 +1,6 @@
 import type { IconName } from "@/components/Icon";
 import { categoryIcon } from "@/lib/categoryIcon";
+import { budgetCategoryToSplitCategory } from "@/lib/split";
 
 // Picks a leading icon for a transaction row. Deliberately NON-directional:
 // money in vs out is signalled once, by the amount's color (see amountTone),
@@ -13,9 +14,16 @@ export function txnLeadingIcon(
   if (type === "REWARD") return "rewards"; // point redemption, not money movement
   if (type === "BILL") return "bills";
   if (type === "TOPUP") return "plus"; // funds added — no spend category to show
+  // INCOME (e.g. "Monthly salary") has its own dedicated icon for the same
+  // reason REWARD/BILL/TOPUP do above: "Income" isn't in the Budget category
+  // taxonomy, so it used to fall through to categoryIcon()'s generic
+  // "budget" chart-axis icon — a fallback meant for an unmatched category,
+  // not a real, common transaction type, and visually off-balance (its mass
+  // sits bottom-left) next to every other row's centered, symmetric icon.
+  if (type === "INCOME") return "income";
   // Everything else is identified by its spending category, the same map the
-  // Budget page uses. Categories outside that taxonomy (e.g. "Income") fall
-  // back to the generic finance icon inside categoryIcon().
+  // Budget page uses. Categories outside that taxonomy still fall back to
+  // the generic finance icon inside categoryIcon().
   return categoryIcon(category);
 }
 
@@ -34,15 +42,23 @@ export function txnValue(type: string, amountCents: number, formatted: string): 
   return type === "REWARD" && amountCents === 0 ? "Redeemed" : formatted;
 }
 
-// Splitting only makes sense for money going out (a purchase you covered),
-// not top-ups/refunds/rewards — so this returns null for anything else.
-export function splitHref(description: string, amountCents: number): string | null {
-  if (amountCents >= 0) return null;
+// Builds the New Split pre-fill URL from a merchant/amount/category triple —
+// the one place that shape gets turned into a query string, shared by the
+// transaction-row "Split" action and the post-payment "Split this?" prompt.
+export function splitPrefillHref(merchant: string, amountAbsCents: number, category: string): string {
   const params = new URLSearchParams({
-    merchant: description,
-    amount: (Math.abs(amountCents) / 100).toFixed(2),
+    merchant,
+    amount: (amountAbsCents / 100).toFixed(2),
+    category: budgetCategoryToSplitCategory(category),
   });
   return `/split?${params.toString()}`;
+}
+
+// Splitting only makes sense for money going out (a purchase you covered),
+// not top-ups/refunds/rewards — so this returns null for anything else.
+export function splitHref(description: string, amountCents: number, category: string): string | null {
+  if (amountCents >= 0) return null;
+  return splitPrefillHref(description, Math.abs(amountCents), category);
 }
 
 // A transaction is flagged when it's more than this many times the user's

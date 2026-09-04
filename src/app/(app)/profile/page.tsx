@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { ListRow } from "@/components/ui/ListRow";
 import { Icon, type IconName } from "@/components/Icon";
+import { NetsCredit } from "@/components/NetsCredit";
 
 const PROFILE_LINKS: Array<{
   href: string;
@@ -65,6 +66,12 @@ export default async function ProfilePage() {
             ))}
           </div>
         </Card>
+      </div>
+
+      {/* Footer credit — the real NETS mark, small and separate from any of
+          this app's own CompassMark/"NETS Quest" branding elsewhere. */}
+      <div className="mt-8 mb-2">
+        <NetsCredit width={110} />
       </div>
     </div>
   );

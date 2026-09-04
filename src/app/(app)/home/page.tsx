@@ -4,40 +4,17 @@ import {
   getAccount,
   getRecentTransactions,
   getSpendingPlan,
-  getRecentSpendByCategory,
+  getSavingsGoals,
   daysRemainingInMonth,
 } from "@/lib/data/queries";
 import { Card } from "@/components/ui/Card";
 import { ListRow } from "@/components/ui/ListRow";
 import { StatCard } from "@/components/ui/StatCard";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { DonutChart, type DonutSegment } from "@/components/ui/DonutChart";
 import { Icon } from "@/components/Icon";
 import { formatMoney, formatSignedMoney, formatDayMonth } from "@/lib/format";
 import { txnLeadingIcon, amountTone, txnValue, splitHref } from "@/lib/txn";
-
-// Keyed by category NAME (categoryIcon.ts's fixed taxonomy), not by rank
-// index — a category's color is then fixed/stable (Food is always orange,
-// Transport is always blue, ...) rather than shifting if its spend rank
-// relative to other categories changes between page loads. Six fully
-// independent chart-only hues (see globals.css) — none of them reuse
-// --color-accent, so no slot can fall back to the app's own navy-ish brand
-// blue and read as "still dark" the way the first pass at this did.
-const CATEGORY_CHART_COLOR: Record<string, { dot: string; stroke: string }> = {
-  Food: { dot: "bg-chart-orange", stroke: "stroke-chart-orange" },
-  Groceries: { dot: "bg-chart-teal", stroke: "stroke-chart-teal" },
-  Shopping: { dot: "bg-chart-purple", stroke: "stroke-chart-purple" },
-  Transport: { dot: "bg-chart-blue", stroke: "stroke-chart-blue" },
-  Entertainment: { dot: "bg-chart-pink", stroke: "stroke-chart-pink" },
-  Utilities: { dot: "bg-chart-green", stroke: "stroke-chart-green" },
-};
-// Anything outside the known taxonomy (shouldn't happen in practice) still
-// gets a real, visible color rather than silently rendering blank.
-const FALLBACK_CHART_COLOR = { dot: "bg-neutral-400", stroke: "stroke-neutral-400" };
-
-function chartColorFor(category: string) {
-  return CATEGORY_CHART_COLOR[category] ?? FALLBACK_CHART_COLOR;
-}
+import { SavingsReportCard } from "./SavingsReportCard";
 
 // Shortcuts to routes that are NOT flush tabs in the bottom nav — Home,
 // Activity and Rewards already have permanent tabs, so putting them here too
@@ -50,26 +27,24 @@ const quickActions = [
   { href: "/budget", label: "Budget", icon: "budget" as const },
   { href: "/topup", label: "Top up", icon: "plus" as const },
   { href: "/auto-topup", label: "Auto Top-up", icon: "settings" as const },
+  { href: "/savings-goals", label: "Savings Goals", icon: "target" as const },
 ];
 
 export default async function HomePage() {
   const user = await requireUser();
-  const [account, txns, plan, categorySpend] = await Promise.all([
+  const [account, txns, plan, savingsGoals] = await Promise.all([
     getAccount(user.id),
     getRecentTransactions(user.id, 6),
     getSpendingPlan(user.id),
-    getRecentSpendByCategory(user.id),
+    getSavingsGoals(user.id),
   ]);
   const currency = account?.currency ?? "SGD";
   const perDayCents = Math.round(plan.availableCents / daysRemainingInMonth());
 
-  const sortedCategories = Object.entries(categorySpend).sort((a, b) => b[1] - a[1]);
-  const topCategories = sortedCategories.slice(0, 4);
-  const totalCategorySpend = sortedCategories.reduce((s, [, cents]) => s + cents, 0);
-  const categorySegments: DonutSegment[] = topCategories.map(([category, cents]) => ({
-    value: totalCategorySpend > 0 ? cents / totalCategorySpend : 0,
-    className: chartColorFor(category).stroke,
-  }));
+  // "Active" = not yet reached. getSavingsGoals is already ordered by
+  // targetDate ascending, so the first unreached one is the soonest —
+  // the most relevant one to feature on Home.
+  const activeGoal = savingsGoals.find((g) => g.currentSavedCents < g.targetAmountCents) ?? null;
 
   return (
     <div>
@@ -154,7 +129,7 @@ export default async function HomePage() {
           <div className="mt-6 flex items-center gap-2 text-sm text-ink-muted">
             <Icon name="rewards" size={16} className="text-accent" />
             <span className="font-medium text-ink">{account?.rewardPoints ?? 0}</span>
-            reward points
+            NETS Miles
           </div>
         </div>
 
@@ -178,44 +153,27 @@ export default async function HomePage() {
                   (isLastOdd ? "col-span-2" : "")
                 }
               >
-                <Icon name={a.icon} size={20} />
+                {/* Icon accented blue, label stays neutral ink — this is
+                    the app's primary navigation row (Split/Bills/Budget/
+                    Top-up/etc.), so it earns the brand accent the bottom
+                    nav's active tabs already get; the label itself staying
+                    plain keeps the tile from reading as a wall of link-blue
+                    text like the bottom nav's active-tab treatment would if
+                    copied verbatim here. */}
+                <Icon name={a.icon} size={20} className="text-accent" />
                 {a.label}
               </Link>
             );
           })}
         </div>
 
-        {/* Top Spending Categories — donut stacked above its legend rather
-            than beside it, so category names/amounts get full card width
-            instead of squeezing into the leftover space next to the chart. */}
+        {/* Savings Report — replaces the old "Top Spending Categories" donut
+            entirely (see SavingsReportCard). Tapping it opens the full
+            Savings Goals page either way, whether it's showing real
+            progress or the create-a-goal empty state. */}
         <div>
-          <h2 className="mb-3 text-xl font-bold text-ink">Top Spending Categories</h2>
-          {topCategories.length === 0 ? (
-            <EmptyState
-              icon={<Icon name="budget" size={22} />}
-              title="No spending yet"
-              description="Your top categories will show up here once you start spending."
-            />
-          ) : (
-            <Card className="flex flex-col items-center gap-6">
-              <DonutChart segments={categorySegments} size={112} strokeWidth={16} />
-              <div className="flex w-full min-w-0 flex-col gap-3">
-                {topCategories.map(([category, cents]) => (
-                  <div key={category} className="flex items-center justify-between gap-3">
-                    <span className="flex min-w-0 items-center gap-2 text-sm text-ink">
-                      <span
-                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${chartColorFor(category).dot}`}
-                      />
-                      <span className="truncate">{category}</span>
-                    </span>
-                    <span className="shrink-0 text-sm font-medium text-ink">
-                      {formatMoney(cents, currency)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
+          <h2 className="mb-3 text-xl font-bold text-ink">Savings Report</h2>
+          <SavingsReportCard goal={activeGoal} currency={currency} />
         </div>
 
         {/* Spending Plan — stacked stat tiles instead of a 3-up row, so each
@@ -224,6 +182,7 @@ export default async function HomePage() {
           <StatCard
             label="Available today"
             value={formatMoney(perDayCents, currency)}
+            tone="positive"
           />
           <StatCard label="Planned" value={formatMoney(plan.plannedCents, currency)} />
           <StatCard
@@ -254,7 +213,7 @@ export default async function HomePage() {
             <Card padded={false}>
               <div className="divide-y divide-line px-6">
                 {txns.map((t) => {
-                  const splitLink = splitHref(t.description, t.amountCents);
+                  const splitLink = splitHref(t.description, t.amountCents, t.category);
                   return (
                     <ListRow
                       key={t.id}
@@ -263,6 +222,7 @@ export default async function HomePage() {
                       subtitle={`${t.category} · ${formatDayMonth(t.createdAt)}`}
                       value={txnValue(t.type, t.amountCents, formatSignedMoney(t.amountCents, currency))}
                       valueTone={amountTone(t.type, t.amountCents)}
+                      reserveActionsSpace
                       actions={
                         splitLink ? (
                           <Link

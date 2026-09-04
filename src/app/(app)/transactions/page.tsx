@@ -55,7 +55,7 @@ export default async function TransactionsPage() {
           <Card padded={false}>
             <div className="divide-y divide-line px-6">
               {txns.map((t) => {
-                const splitLink = splitHref(t.description, t.amountCents);
+                const splitLink = splitHref(t.description, t.amountCents, t.category);
                 const flagged = isHigherThanUsual(t, categoryStats);
                 return (
                   <ListRow
@@ -65,6 +65,7 @@ export default async function TransactionsPage() {
                     subtitle={`${t.category} · ${formatDayMonth(t.createdAt)}${t.country ? ` · ${t.country}` : ""}`}
                     value={txnValue(t.type, t.amountCents, formatSignedMoney(t.amountCents, currency))}
                     valueTone={amountTone(t.type, t.amountCents)}
+                    reserveActionsSpace
                     actions={
                       splitLink ? (
                         <Link

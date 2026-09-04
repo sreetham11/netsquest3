@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { Icon } from "@/components/Icon";
 import { MobileFrame } from "@/components/MobileFrame";
@@ -15,9 +16,14 @@ import {
 } from "@/lib/nav";
 import { logout } from "@/app/auth/actions";
 
-// How long each beat of the Scan & Pay intro auto-plays before advancing —
-// tap-to-skip (ScanPayIntro's onSkip) can always cut this short. Combined
-// worst case is 1400 + 1500 = 2.9s, under the 3-4s budget.
+// How long the Scan & Pay intro's Face ID beat auto-plays before advancing —
+// tap-to-skip (ScanPayIntro's onSkip) can always cut this short.
+//
+// NFC_STAGE_MS/the "nfc" stage below are ScanPayIntro's — its "Hold Near
+// Reader" animation belongs to a different (NFC-tap) payment method, not
+// Scan & Pay, so the raised action never triggers it; kept only so the
+// timed nfc -> faceid handoff still works correctly if something else ever
+// legitimately starts this intro at "nfc".
 const NFC_STAGE_MS = 1400;
 const FACEID_STAGE_MS = 1500;
 
@@ -38,10 +44,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
-  // null = not showing. Tapping the raised action starts at "nfc" instead of
-  // navigating immediately; the effect below advances it to "faceid" and
-  // then navigates to SCAN_ACTION.href — the actual destination (the
-  // existing scan/split page) is unchanged, this only delays reaching it.
+  // null = not showing. Tapping the raised action starts straight at
+  // "faceid" (Scan & Pay's own animation — never "nfc"/"Hold Near Reader",
+  // which is a different payment method's animation) instead of navigating
+  // immediately; the effect below advances it to SCAN_ACTION.href once the
+  // Face ID beat finishes — the actual destination (the existing scan/split
+  // page) is unchanged, this only delays reaching it.
   const [scanStage, setScanStage] = useState<ScanPayStage | null>(null);
 
   const finishScanIntro = useCallback(() => {
@@ -69,8 +77,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [scanStage, finishScanIntro]);
 
-  // Auto-advances nfc -> faceid -> navigate. Purely a timed UI transition —
-  // no Server Action, no data fetch, nothing payment-related happens here.
+  // Auto-advances faceid -> navigate (or, if some future caller ever starts
+  // this at "nfc", nfc -> faceid -> navigate). Purely a timed UI transition
+  // — no Server Action, no data fetch, nothing payment-related happens here.
   useEffect(() => {
     if (!scanStage) return;
     if (scanStage === "nfc") {
@@ -94,7 +103,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <MobileFrame>
       {/* Top bar — fixed row, never scrolls */}
       <header className="flex shrink-0 items-center justify-between border-b border-line bg-surface px-4 py-3">
-        <span className="text-base font-semibold text-accent">NETS Quest</span>
+        <Link href="/home" className="flex items-center gap-1 text-base font-semibold text-accent">
+          <Image src="/nets-logo.png" alt="NETS" width={627} height={163} className="h-4 w-auto" />
+          Quest
+        </Link>
         <form action={logout}>
           <button
             type="submit"
@@ -165,12 +177,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Center slot: the raised circular action. Absolutely positioned and
             pulled above the bar so it pops out rather than sitting flush.
             A button, not a Link — tapping starts the Scan & Pay intro
-            (nfc -> faceid), which navigates to SCAN_ACTION.href itself once
-            done/skipped, rather than navigating immediately. */}
+            straight at its Face ID beat (never "Hold Near Reader" — see the
+            scanStage comment above), which navigates to SCAN_ACTION.href
+            itself once done/skipped, rather than navigating immediately. */}
         <div className="relative flex flex-col items-center justify-end py-2">
           <button
             type="button"
-            onClick={() => setScanStage("nfc")}
+            onClick={() => setScanStage("faceid")}
             aria-label={SCAN_ACTION.label}
             aria-current={isActive(pathname, SCAN_ACTION.href) ? "page" : undefined}
             className={

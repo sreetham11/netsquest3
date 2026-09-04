@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CompassMark } from "@/components/CompassMark";
 import { MobileFrame } from "@/components/MobileFrame";
-import { PeopleSilhouettes } from "@/components/PeopleSilhouettes";
+import { NetsCredit } from "@/components/NetsCredit";
 import { Icon, type IconName } from "@/components/Icon";
 
 // Three one-line highlights, to give the middle of the screen something to do
@@ -28,18 +28,23 @@ export default async function WelcomePage() {
 
   return (
     <MobileFrame>
-      {/* Same scattered-silhouette background texture as /splash, replacing
-          the old flat navy-tinted gradient — consistent treatment across
-          both pre-login screens. bg-canvas is the plain base fill it sits
-          on top of. */}
       <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-canvas px-4 pb-8 pt-8">
-        <PeopleSilhouettes variant="compact" />
+        {/* Real NETS credit — small, separate, near the top, distinct from
+            the compass+wordmark hero below which stays the main focus. */}
+        <div className="relative flex justify-center">
+          <NetsCredit tone="muted" width={120} />
+        </div>
 
-        {/* Everything above the CTA is centred in the free space, so leftover
-            height is split evenly above and below the block instead of piling
-            into one dead gap. relative so it (and the CTA below) paint above
-            the absolute background layer. */}
-        <div className="relative flex flex-1 flex-col justify-center">
+        {/* Everything above the CTA sits toward the BOTTOM of the free space
+            (justify-end, not -center) — with no background graphic left to
+            fill a centered gap, pinning this block near the CTA below keeps
+            that boundary tight and pushes the leftover space to the top
+            instead, above the hero, where an airy gap under the credit line
+            reads as intentional rather than as awkward dead space right
+            before the button. mb-8 holds the block off the CTA by one
+            deliberate step (not flush against it) so the compass/hero sit a
+            little higher rather than hugging the button. */}
+        <div className="relative mb-8 flex flex-1 flex-col justify-end">
         {/* Hero: the same compass mark as /splash, larger, over a soft radial
             glow built from the two brand colors. */}
         <div className="relative flex justify-center py-2">

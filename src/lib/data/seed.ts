@@ -115,7 +115,26 @@ export async function ensureUserData(userId: string, email: string) {
     data: transactions.map((t) => ({ ...t, userId })),
   });
 
-  // Instant bill splits — name-only participants, no invites/real accounts.
+  // Saved payees, so Split has something to pick from on first use instead of
+  // an empty chip row. createManyAndReturn (not createMany) because the
+  // splits seeded right below actually LINK their "Wei Jie" participant to
+  // this contact's id — matching names alone doesn't satisfy Split's
+  // "Remind via WhatsApp" gate (src/app/(app)/split/page.tsx's canRemind
+  // requires a real contactId -> Contact.phoneNumber, not just a same-named
+  // participant), so a demo account needs at least one participant properly
+  // linked to see that button at all. Phone numbers are otherwise cosmetic
+  // display data only.
+  const contacts = await prisma.contact.createManyAndReturn({
+    data: [
+      { userId, name: "Cara", phoneNumber: "+65 9123 4567" },
+      { userId, name: "Zoe", phoneNumber: "+65 8234 5678" },
+      { userId, name: "Wei Jie", phoneNumber: "+65 9345 6789" },
+    ],
+  });
+  const weiJieContactId = contacts.find((c) => c.name === "Wei Jie")?.id ?? null;
+
+  // Instant bill splits — participants are names only, except Wei Jie above,
+  // linked so this account has a real "Remind via WhatsApp" case out of the box.
   await prisma.split.create({
     data: {
       ownerId: userId,
@@ -125,7 +144,7 @@ export async function ensureUserData(userId: string, email: string) {
       participants: {
         create: [
           { name: ownerName, shareAmountCents: 4_267, paid: true },
-          { name: "Wei Jie", shareAmountCents: 4_267, paid: true },
+          { name: "Wei Jie", contactId: weiJieContactId, shareAmountCents: 4_267, paid: true },
           { name: "Priya", shareAmountCents: 4_266, paid: false },
         ],
       },
@@ -141,21 +160,10 @@ export async function ensureUserData(userId: string, email: string) {
       participants: {
         create: [
           { name: ownerName, shareAmountCents: 900, paid: true },
-          { name: "Wei Jie", shareAmountCents: 900, paid: false },
+          { name: "Wei Jie", contactId: weiJieContactId, shareAmountCents: 900, paid: false },
         ],
       },
     },
-  });
-
-  // Saved payees, so Split has something to pick from on first use instead of
-  // an empty chip row. Names match the seeded splits' participants where it
-  // makes sense. Phone numbers are cosmetic display data only.
-  await prisma.contact.createMany({
-    data: [
-      { userId, name: "Cara", phoneNumber: "+65 9123 4567" },
-      { userId, name: "Zoe", phoneNumber: "+65 8234 5678" },
-      { userId, name: "Wei Jie", phoneNumber: "+65 9345 6789" },
-    ],
   });
 
   // Materialize the tier ladder from the ONE definition in src/lib/rewards.ts

@@ -13,6 +13,7 @@ export function ListRow({
   badge,
   caption,
   subtitleWrap = false,
+  reserveActionsSpace = false,
 }: {
   leading?: ReactNode;
   title: string;
@@ -31,6 +32,14 @@ export function ListRow({
   // read in full (e.g. Rewards' tier descriptions) — it wraps to a second
   // line instead of clipping.
   subtitleWrap?: boolean;
+  // Set on EVERY row in a list where only SOME rows pass `actions` (e.g.
+  // Transactions' per-row "Split" icon) — reserves the action column's
+  // width even on rows with none, so the value column's right edge stays
+  // on one straight line down the whole list instead of shifting per row.
+  // Leave off (default) for any list where actions is either always or
+  // never present — there, the old presence-only rendering already lines
+  // up fine and this would just add an unneeded gap.
+  reserveActionsSpace?: boolean;
 }) {
   const valueClass =
     valueTone === "negative"
@@ -72,7 +81,17 @@ export function ListRow({
             ) : null}
           </div>
         ) : null}
-        {actions ? <div className="shrink-0">{actions}</div> : null}
+        {/* Reserves the SAME width whether or not this row actually has an
+            action (e.g. Transactions' per-row "Split" icon, only shown on
+            some rows) — otherwise the value column's right edge shifts row
+            to row depending on which ones have one, breaking the straight
+            vertical column a list of amounts should read as. w-8 matches
+            the action icon's own h-8 w-8 sizing exactly. */}
+        {actions ? (
+          <div className="w-8 shrink-0">{actions}</div>
+        ) : reserveActionsSpace ? (
+          <div aria-hidden className="w-8 shrink-0" />
+        ) : null}
       </div>
       {caption ? (
         <div className={"pb-4 text-xs " + (leading ? "pl-[52px]" : "")}>{caption}</div>

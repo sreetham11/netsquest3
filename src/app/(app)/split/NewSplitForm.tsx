@@ -51,11 +51,19 @@ export function NewSplitForm({ contacts }: { contacts: ContactChip[] }) {
   const searchParams = useSearchParams();
   const prefillMerchant = searchParams.get("merchant") ?? "";
   const prefillAmount = searchParams.get("amount") ?? "";
+  const prefillCategoryRaw = searchParams.get("category") ?? "";
+  const prefillCategory = CATEGORIES.some((c) => c.value === prefillCategoryRaw)
+    ? prefillCategoryRaw
+    : "";
+  // Only merchant/amount count as "opened with data" — they're what makes
+  // scanning a receipt redundant. A bare category param (shouldn't happen in
+  // practice) doesn't on its own justify skipping Scan Receipt.
+  const hasPrefill = Boolean(prefillMerchant || prefillAmount);
 
-  const [expanded, setExpanded] = useState(Boolean(prefillMerchant || prefillAmount));
+  const [expanded, setExpanded] = useState(hasPrefill);
   const [title, setTitle] = useState(prefillMerchant);
   const [totalAmount, setTotalAmount] = useState(prefillAmount);
-  const [category, setCategory] = useState("General");
+  const [category, setCategory] = useState(prefillCategory || "General");
   const [people, setPeople] = useState<Person[]>([
     { name: YOU_PARTICIPANT_NAME, contactId: null },
   ]);
@@ -69,7 +77,13 @@ export function NewSplitForm({ contacts }: { contacts: ContactChip[] }) {
   const [method, setMethod] = useState<"equal" | "custom">("equal");
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
 
-  const [mode, setMode] = useState<EntryMode>("manual");
+  // Pre-filled data (from a transaction row or a just-completed Scan & Pay)
+  // means there's nothing left to scan — default to Manual entry, already
+  // populated. Opened fresh, with nothing to pre-fill, default to Scan
+  // Receipt instead. Purely an initial value: switching tabs afterwards
+  // never touches title/totalAmount/category, so pre-filled values survive
+  // either way.
+  const [mode, setMode] = useState<EntryMode>(hasPrefill ? "manual" : "scan");
   const [scanStep, setScanStep] = useState<ScanStep>("options");
   const [scanItems, setScanItems] = useState<DraftItem[]>([]);
   const [scanReviewTotal, setScanReviewTotal] = useState("");
@@ -98,7 +112,9 @@ export function NewSplitForm({ contacts }: { contacts: ContactChip[] }) {
     setMethod("equal");
     setCustomAmounts({});
     setExpanded(false);
-    setMode("manual");
+    // Back to a fresh, contextless state — same default as opening "+ New
+    // split" with no transaction/payment behind it.
+    setMode("scan");
     setScanStep("options");
     setScanItems([]);
     setScanReviewTotal("");

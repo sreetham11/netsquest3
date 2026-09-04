@@ -29,7 +29,14 @@ export type IconName =
   | "warning"
   | "settings"
   | "lock"
-  | "face";
+  | "face"
+  | "card"
+  | "phone"
+  | "target"
+  | "message"
+  | "search"
+  | "income"
+  | "chevron";
 
 const paths: Record<IconName, React.ReactNode> = {
   home: <path d="M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5" />,
@@ -204,6 +211,65 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" />
     </>
   ),
+  // Plain card silhouette — deliberately NO waves (that's `contactless`'s
+  // job); this one is used purely decoratively in the Top-up intro, never
+  // to imply an NFC/tap claim.
+  card: (
+    <>
+      <rect x="2.5" y="6" width="19" height="12" rx="2" />
+      <path d="M2.5 10h19" />
+    </>
+  ),
+  // Plain phone silhouette (portrait rounded rect + home indicator) — the
+  // Top-up intro's fixed "device" the card animates toward.
+  phone: (
+    <>
+      <rect x="7" y="2.5" width="10" height="19" rx="2.2" />
+      <path d="M10.5 18.2h3" />
+    </>
+  ),
+  // Bullseye — Savings Goals (hitting a target amount by a target date).
+  target: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    </>
+  ),
+  // Generic chat bubble — Split's "Remind via WhatsApp" action. Deliberately
+  // NOT a WhatsApp logo (we hold no license/certification for that mark),
+  // same reasoning as avoiding real bank logos elsewhere in this app.
+  message: (
+    <>
+      <rect x="4" y="5" width="16" height="11" rx="3" />
+      <path d="M8 16v3l4-3" />
+    </>
+  ),
+  // Magnifying glass — Rewards Marketplace's AI Deal Finder.
+  search: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M20 20l-4.7-4.7" />
+    </>
+  ),
+  // Banknote — INCOME-type transactions (e.g. "Monthly salary"). Deliberately
+  // NOT a directional up/down arrow: see txnLeadingIcon in lib/txn.ts, which
+  // already removed those app-wide since amountTone's color alone signals
+  // money in vs out. A plain, symmetric, centered glyph like every other
+  // category icon here, unlike the generic "budget" chart-axis icon this
+  // used to fall back to (bottom-left-heavy, reads as off-center next to
+  // its neighbors in a transaction list).
+  income: (
+    <>
+      <rect x="3" y="7" width="18" height="10" rx="2" />
+      <circle cx="12" cy="12" r="2.3" />
+      <path d="M6.5 9.5v5M17.5 9.5v5" />
+    </>
+  ),
+  // Plain down chevron — collapse/expand affordance (Split's card headers).
+  // Callers rotate it 180deg via className when expanded, same convention
+  // as ContactRow's plus-rotated-45 "X".
+  chevron: <path d="M6 9l6 6 6-6" />,
 };
 
 export function Icon({

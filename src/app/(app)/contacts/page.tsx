@@ -2,11 +2,10 @@ import { requireUser } from "@/lib/auth";
 import { getContacts } from "@/lib/data/queries";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { ListRow } from "@/components/ui/ListRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/Icon";
-import { deleteContact } from "../actions";
 import { AddContactForm } from "./AddContactForm";
+import { ContactRow } from "./ContactRow";
 
 // Saved payees you manage yourself. Nothing here contacts anyone: the phone
 // number is stored and shown PayNow-style so a payee looks familiar, and is
@@ -35,24 +34,7 @@ export default async function ContactsPage() {
           <Card padded={false}>
             <div className="divide-y divide-line px-6">
               {contacts.map((contact) => (
-                <ListRow
-                  key={contact.id}
-                  leading={<Icon name="contacts" size={18} />}
-                  title={contact.name}
-                  subtitle={contact.phoneNumber ?? "No number saved"}
-                  actions={
-                    <form action={deleteContact}>
-                      <input type="hidden" name="contactId" value={contact.id} />
-                      <button
-                        type="submit"
-                        aria-label={`Delete ${contact.name}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-danger-strong"
-                      >
-                        <Icon name="plus" size={14} className="rotate-45" />
-                      </button>
-                    </form>
-                  }
-                />
+                <ContactRow key={contact.id} contact={contact} />
               ))}
             </div>
           </Card>

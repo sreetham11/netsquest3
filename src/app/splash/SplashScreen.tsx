@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { CompassMark } from "@/components/CompassMark";
 import { MobileFrame } from "@/components/MobileFrame";
-import { PeopleSilhouettes } from "@/components/PeopleSilhouettes";
+import { NetsCredit } from "@/components/NetsCredit";
 
 const SPLASH_MS = 2500;
 
@@ -31,13 +32,37 @@ export function SplashScreen() {
         type="button"
         onClick={() => router.replace("/welcome")}
         aria-label="Skip to welcome"
-        className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-hidden bg-deep-navy"
+        className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-hidden bg-splash-navy"
       >
-        {/* Background texture layer — behind everything else below, purely
-            decorative. `absolute` takes it out of this flex container's
-            layout entirely, so it doesn't affect the centering of the
-            compass/wordmark. */}
-        <PeopleSilhouettes />
+        {/* Background illustration + credit, grouped into one bottom-anchored
+            stack — decorative, `absolute` so it takes no part in the flex
+            centering of the compass/wordmark above. The group (not the image
+            alone) sits flush against the bottom edge; the illustration comes
+            FIRST inside it so the credit renders directly below the people,
+            never overlapping them (it used to, back when both were
+            independently bottom-anchored). bg-splash-navy above is
+            hand-matched to this file's own flat navy (see globals.css) so
+            the CSS fill and the image read as one continuous surface above
+            it, with no visible seam. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center">
+          <Image
+            src="/splash-illustration.png"
+            alt=""
+            aria-hidden
+            width={1440}
+            height={717}
+            priority
+            className="h-auto w-full select-none"
+          />
+          <div
+            className={
+              "pb-8 transition-opacity duration-700 ease-out " +
+              (shown ? "opacity-100 delay-300" : "opacity-0")
+            }
+          >
+            <NetsCredit tone="on-dark" priority />
+          </div>
+        </div>
 
         <span
           className={
@@ -50,11 +75,12 @@ export function SplashScreen() {
 
         <span
           className={
-            "relative text-2xl font-semibold tracking-tight text-white transition-opacity duration-700 ease-out " +
+            "relative flex items-center gap-1.5 text-2xl font-semibold tracking-tight text-white transition-opacity duration-700 ease-out " +
             (shown ? "opacity-100 delay-150" : "opacity-0")
           }
         >
-          NETS Quest
+          <Image src="/nets-logo.png" alt="NETS" width={627} height={163} className="h-6 w-auto" />
+          Quest
         </span>
       </button>
     </MobileFrame>

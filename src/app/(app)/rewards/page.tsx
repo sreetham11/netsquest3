@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { getRewards, getMerchantDeals, getRecentSpendByCategory } from "@/lib/data/queries";
+import { getRewards, getMerchantDeals, getRecentSpendByCategory, getAccount } from "@/lib/data/queries";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button, ButtonLink } from "@/components/ui/Button";
@@ -15,6 +15,7 @@ import {
 } from "@/lib/rewards";
 import { redeemReward } from "../actions";
 import { CashbackForm } from "./CashbackForm";
+import { AiDealFinder } from "./AiDealFinder";
 
 const REWARD_ICON: Record<string, IconName> = {
   coffee: "coffee",
@@ -80,7 +81,7 @@ export default async function RewardsPage({
     <div>
       <PageHeader
         title="Rewards"
-        subtitle="Pay with NETS, earn points automatically, and redeem something real."
+        subtitle="Pay with NETS, earn NETS Miles automatically, and redeem something real."
       />
 
       <div className="mb-6 flex gap-2">
@@ -89,7 +90,7 @@ export default async function RewardsPage({
           variant={activeTab === "points" ? "primary" : "secondary"}
           className="flex-1 justify-center"
         >
-          Points
+          Miles
         </ButtonLink>
         <ButtonLink
           href="/rewards?tab=marketplace"
@@ -131,7 +132,7 @@ async function PointsTab({ userId }: { userId: string }) {
           <p className="mt-1 text-2xl font-semibold text-ink">{points.toLocaleString()}</p>
           <p className="mt-1 text-sm text-ink-muted">
             Worth {formatMoney(pointsValueCents, currency)} ·{" "}
-            {POINTS_PER_DOLLAR_REDEEMED} pts = $1.00
+            {POINTS_PER_DOLLAR_REDEEMED} Miles = $1.00
           </p>
         </Card>
 
@@ -246,7 +247,7 @@ async function PointsTab({ userId }: { userId: string }) {
 
       {/* Tangible rewards read as more motivating than an equivalent cashback %. */}
       <div className="mt-8">
-        <h2 className="mb-3 text-xl font-bold text-ink">Redeem your points</h2>
+        <h2 className="mb-3 text-xl font-bold text-ink">Redeem your Miles</h2>
         {catalogue.length === 0 ? (
           <EmptyState
             icon={<Icon name="rewards" size={22} />}
@@ -266,7 +267,7 @@ async function PointsTab({ userId }: { userId: string }) {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-ink">{reward.name}</p>
                       <p className="mt-0.5 text-sm text-ink-muted">
-                        {reward.pointCost.toLocaleString()} pts
+                        {reward.pointCost.toLocaleString()} Miles
                       </p>
                     </div>
                   </div>
@@ -301,7 +302,7 @@ async function PointsTab({ userId }: { userId: string }) {
                   leading={<Icon name={REWARD_ICON[r.reward.category] ?? "rewards"} size={18} />}
                   title={r.reward.name}
                   subtitle={`${formatDayMonth(r.createdAt)} · ${formatTime(r.createdAt)}`}
-                  value={`-${r.pointsSpent.toLocaleString()} pts`}
+                  value={`-${r.pointsSpent.toLocaleString()} Miles`}
                   valueTone="negative"
                 />
               ))}
@@ -314,9 +315,10 @@ async function PointsTab({ userId }: { userId: string }) {
 }
 
 async function MarketplaceTab({ userId }: { userId: string }) {
-  const [deals, categorySpend] = await Promise.all([
+  const [deals, categorySpend, account] = await Promise.all([
     getMerchantDeals(),
     getRecentSpendByCategory(userId),
+    getAccount(userId),
   ]);
 
   const topSpendCategory = Object.entries(categorySpend).sort((a, b) => b[1] - a[1])[0]?.[0];
@@ -332,6 +334,15 @@ async function MarketplaceTab({ userId }: { userId: string }) {
 
   return (
     <div>
+      {/* Open-ended AI discovery + mock checkout, distinct from the curated
+          partner-deal list below — clearly separated so it reads as
+          "search anything" rather than another row in the fixed merchant
+          catalogue. */}
+      <AiDealFinder
+        balanceCents={account?.balanceCents ?? 0}
+        currency={account?.currency ?? "SGD"}
+      />
+
       <p className="mb-1 text-sm text-ink-muted">
         Exclusive discounts from partner merchants — pay with NETS to enjoy them.
       </p>

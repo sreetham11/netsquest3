@@ -116,9 +116,13 @@ model SplitParticipant {
 }
 
 // A saved payee the user manages themselves — no invites, no real accounts,
-// no lookup against any directory. phoneNumber is COSMETIC ONLY: it is
-// displayed PayNow-style so a saved payee looks familiar, and is never used
-// for messaging, notifications, or matching to another user.
+// no lookup against any directory, and never used to match against another
+// user. phoneNumber was originally cosmetic-only (PayNow-style display); the
+// one exception is Split's "Remind via WhatsApp" action (see
+// sendWhatsAppReminder in actions.ts), which sends a real WhatsApp message to
+// this number via Twilio's Sandbox API when a user explicitly taps the
+// button for a participant. Still never used for anything automatic —
+// no background jobs, no notifications the user didn't directly trigger.
 model Contact {
   id           String             @id @default(cuid())
   userId       String
@@ -190,6 +194,33 @@ model BudgetCap {
   createdAt  DateTime @default(now())
 
   @@unique([userId, category])
+}
+
+// A user-set savings target (e.g. "Trip to Japan"). currentSavedCents is a
+// standalone tracked number the user updates themselves — this app has no
+// mechanism to actually earmark/lock wallet funds, so it is deliberately NOT
+// derived from Account.balanceCents.
+model SavingsGoal {
+  id                String    @id @default(cuid())
+  userId            String
+  name              String
+  targetAmountCents Int
+  currentSavedCents Int       @default(0)
+  targetDate        DateTime
+  createdAt         DateTime  @default(now())
+
+  // AI cost estimate (see createSavingsGoal) — generated once at creation,
+  // best-effort. JSON-serialized text, not Prisma Json: this is the only
+  // structured-JSON field in the schema, and a plain string column keeps the
+  // generated client simple. Null if generation failed or the API key was
+  // unset — the goal still exists and works without it.
+  aiCostEstimate    String?
+  // AI cut suggestions (see refreshGoalSuggestions) — regenerated on demand
+  // against the user's current spending, not cached indefinitely.
+  aiSuggestions     String?
+  aiSuggestionsAt   DateTime?
+
+  @@index([userId])
 }
 
 // Recurring bill the user can pay (simulated).

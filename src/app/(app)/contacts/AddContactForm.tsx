@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/Icon";
 import { createContact } from "../actions";
 
-// Name is required; the number is optional and cosmetic (see createContact).
+// Name and phone number are both required (see createContact) — phone is
+// still cosmetic/reference-only (never messaged), but a saved payee with no
+// number defeats the PayNow-style "looks like a real contact" point of this
+// list, so it's required at entry the same way name is.
 //
 // Uses useTransition + a direct action call rather than useActionState so the
 // fields can be cleared and the card collapsed right where the result is
@@ -26,14 +29,22 @@ export function AddContactForm() {
   }
 
   function submit() {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+    const trimmedName = name.trim();
+    const trimmedPhone = phoneNumber.trim();
+    if (!trimmedName) return;
+    // Belt-and-suspenders alongside the disabled Save button — the name
+    // field's Enter-to-submit handler below calls this directly, bypassing
+    // the button's disabled attribute.
+    if (!trimmedPhone) {
+      setError("Enter a phone number.");
+      return;
+    }
     setError("");
 
     startTransition(async () => {
       const formData = new FormData();
-      formData.append("name", trimmed);
-      formData.append("phoneNumber", phoneNumber.trim());
+      formData.append("name", trimmedName);
+      formData.append("phoneNumber", trimmedPhone);
       const result = await createContact(null, formData);
       // Duplicate names are rejected server-side, so the card stays open with
       // the error rather than silently discarding what was typed.
@@ -83,12 +94,16 @@ export function AddContactForm() {
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-ink">
-              Phone number <span className="text-ink-muted">(optional)</span>
-            </span>
+            <span className="text-sm font-medium text-ink">Phone number</span>
             <input
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
               placeholder="+65 9123 4567"
               className="rounded-button border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
@@ -102,7 +117,7 @@ export function AddContactForm() {
           <Button
             type="button"
             onClick={submit}
-            disabled={pending || name.trim().length === 0}
+            disabled={pending || name.trim().length === 0 || phoneNumber.trim().length === 0}
             className="w-full justify-center"
           >
             {pending ? "Saving…" : "Save contact"}

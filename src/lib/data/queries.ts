@@ -54,7 +54,9 @@ export async function getSplits(userId: string) {
     orderBy: { createdAt: "desc" },
     // Deterministic participant order: the Spin wheel renders one slice per
     // participant, so the order must not reshuffle between renders.
-    include: { participants: { orderBy: { id: "asc" } } },
+    // `contact` included so the page can gate "Remind via WhatsApp" on
+    // contact.phoneNumber actually being set, not just contactId existing.
+    include: { participants: { include: { contact: true }, orderBy: { id: "asc" } } },
   });
 }
 
@@ -176,8 +178,9 @@ export async function getSpendingPlan(userId: string) {
 // Overseas budget cap on top of counting toward its real category's cap.
 // That double-count is intentional (a purchase abroad is genuinely both
 // "Shopping" spend and "Overseas" spend) — the underlying rows are never
-// changed. getRecentSpendByCategory (Home's Top Spending Categories) is
-// deliberately NOT given this treatment, so "Overseas" never appears there.
+// changed. getRecentSpendByCategory (Rewards' deal matching, Savings Goal
+// cut-suggestions) is deliberately NOT given this treatment, so "Overseas"
+// never appears there.
 export async function getMonthlySpendByCategory(
   userId: string,
 ): Promise<Record<string, number>> {
@@ -208,11 +211,15 @@ export async function getMonthlySpendByCategory(
   return map;
 }
 
-// Home's "Top Spending Categories" — a rolling window rather than
-// getMonthlySpendByCategory's calendar-month cutoff, so it stays populated
-// for any account once the calendar rolls past the month its demo data was
-// seeded in (Budget's calendar-month scoping is correct for its use case —
-// actual monthly caps — so that query is intentionally left as-is).
+// A rolling window rather than getMonthlySpendByCategory's calendar-month
+// cutoff, so it stays populated for any account once the calendar rolls past
+// the month its demo data was seeded in (Budget's calendar-month scoping is
+// correct for its use case — actual monthly caps — so that query is
+// intentionally left as-is). Used by Rewards (matching deals to top spend
+// category) and the Savings Goal AI cut-suggestions — no longer by Home,
+// which dropped its "Top Spending Categories" donut for the Savings Report
+// card (see home/page.tsx); left in place because those other two callers
+// still depend on it.
 export async function getRecentSpendByCategory(
   userId: string,
   days = 30,
@@ -232,6 +239,87 @@ export async function getRecentSpendByCategory(
   const map: Record<string, number> = {};
   for (const r of rows) map[r.category] = Math.abs(r._sum.amountCents ?? 0);
   return map;
+}
+
+// Deterministic spending stats for the Savings Goal "AI Goal Coach" — see
+// src/lib/savingsGoals.ts's spendCutCandidates and src/app/(app)/actions.ts's
+// explainSpendCuts. Everything a category-level recommendation could need
+// (current spend, a comparable average, and whether there's enough history to
+// trust either) is computed here in code; the AI call downstream never sees
+// raw transactions and never computes a number itself.
+//
+// "Current period" = last 30 days; "prior average" = the 60 days before that,
+// divided by 2 to get a comparable monthly rate — same rolling-window
+// convention as getRecentSpendByCategory, just split into two buckets so a
+// current-vs-average comparison is possible. hasEnoughHistory requires BOTH a
+// spend history that actually reaches back into the prior period (so the
+// average isn't computed from nothing) and a minimum transaction count (so a
+// couple of stray transactions can't pass for a trend) — short of that, the
+// AI Goal Coach shows general (non-personalized) tips instead, never a
+// personalized-looking recommendation built on too little data.
+const GOAL_COACH_CURRENT_PERIOD_DAYS = 30;
+const GOAL_COACH_PRIOR_PERIOD_DAYS = 60;
+const GOAL_COACH_MIN_HISTORY_DAYS = 45;
+const GOAL_COACH_MIN_SPEND_TXN_COUNT = 8;
+
+export type CategorySpendStat = {
+  category: string;
+  currentPeriodCents: number;
+  averageMonthlyCents: number;
+};
+
+export type SpendingHistorySummary = {
+  hasEnoughHistory: boolean;
+  categories: CategorySpendStat[];
+};
+
+export async function getGoalCoachSpendingStats(userId: string): Promise<SpendingHistorySummary> {
+  const now = new Date();
+  const currentSince = new Date(now);
+  currentSince.setDate(currentSince.getDate() - GOAL_COACH_CURRENT_PERIOD_DAYS);
+  const priorSince = new Date(now);
+  priorSince.setDate(priorSince.getDate() - (GOAL_COACH_CURRENT_PERIOD_DAYS + GOAL_COACH_PRIOR_PERIOD_DAYS));
+
+  const [earliestSpend, priorPeriodTxnCount, currentRows, priorRows] = await Promise.all([
+    prisma.transaction.findFirst({
+      where: { userId, amountCents: { lt: 0 } },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+    prisma.transaction.count({
+      where: { userId, amountCents: { lt: 0 }, createdAt: { gte: priorSince } },
+    }),
+    prisma.transaction.groupBy({
+      by: ["category"],
+      where: { userId, amountCents: { lt: 0 }, createdAt: { gte: currentSince } },
+      _sum: { amountCents: true },
+    }),
+    prisma.transaction.groupBy({
+      by: ["category"],
+      where: { userId, amountCents: { lt: 0 }, createdAt: { gte: priorSince, lt: currentSince } },
+      _sum: { amountCents: true },
+    }),
+  ]);
+
+  const earliestDaysAgo = earliestSpend
+    ? Math.floor((now.getTime() - earliestSpend.createdAt.getTime()) / (24 * 60 * 60 * 1000))
+    : 0;
+  const hasEnoughHistory =
+    earliestDaysAgo >= GOAL_COACH_MIN_HISTORY_DAYS && priorPeriodTxnCount >= GOAL_COACH_MIN_SPEND_TXN_COUNT;
+
+  const currentMap: Record<string, number> = {};
+  for (const r of currentRows) currentMap[r.category] = Math.abs(r._sum.amountCents ?? 0);
+  const priorMap: Record<string, number> = {};
+  for (const r of priorRows) priorMap[r.category] = Math.abs(r._sum.amountCents ?? 0);
+
+  const categories = new Set([...Object.keys(currentMap), ...Object.keys(priorMap)]);
+  const stats: CategorySpendStat[] = Array.from(categories).map((category) => ({
+    category,
+    currentPeriodCents: currentMap[category] ?? 0,
+    averageMonthlyCents: Math.round((priorMap[category] ?? 0) / (GOAL_COACH_PRIOR_PERIOD_DAYS / 30)),
+  }));
+
+  return { hasEnoughHistory, categories: stats };
 }
 
 export async function getBudgets(userId: string) {
@@ -259,5 +347,14 @@ export async function getContacts(userId: string) {
   return prisma.contact.findMany({
     where: { userId },
     orderBy: { name: "asc" },
+  });
+}
+
+// Soonest-due goal first — same "closest deadline first" convention Bills
+// uses (orderBy dueDayOfMonth asc).
+export async function getSavingsGoals(userId: string) {
+  return prisma.savingsGoal.findMany({
+    where: { userId },
+    orderBy: { targetDate: "asc" },
   });
 }

@@ -28,8 +28,11 @@ export const NAV_ITEMS_BEFORE_CENTER = 2;
 
 // Center slot — the raised action. Points at the real merchant-payment flow
 // (/pay, backed by the makePayment Server Action) — NOT /split. Split is a
-// separate, independent flow reached only via its own More entry below; it
-// shares no code path with Scan & Pay beyond both existing in this app.
+// separate, independent flow reached only via its own More entry below.
+// Split's own "Scan & Pay" button (split/page.tsx) does reuse this SCAN_ACTION
+// href, appending its own `?from=split` marker so a completed payment can
+// offer "Split this?" — this bottom-nav entry point never adds that marker,
+// so a payment started here behaves exactly as before.
 export const SCAN_ACTION: NavItem = {
   href: "/pay",
   label: "Scan & Pay",
@@ -61,7 +64,14 @@ export const ALL_NAV_ITEMS: NavItem[] = [
 // Split/Bills/Budget used to also live in MORE_NAV_ITEMS (a duplicate entry
 // point, removed above); kept here so removing them from the sheet can't
 // silently drop them from the proxy's auth gate.
-const EXTRA_PROTECTED_ROUTES = ["/split", "/bills", "/budget", "/topup", "/auto-topup"];
+const EXTRA_PROTECTED_ROUTES = [
+  "/split",
+  "/bills",
+  "/budget",
+  "/topup",
+  "/auto-topup",
+  "/savings-goals",
+];
 
 export const PROTECTED_PREFIXES = Array.from(
   new Set([

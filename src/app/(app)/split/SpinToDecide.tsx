@@ -53,25 +53,17 @@ export function SpinToDecide({
 
   const spinAllowed = canSpin(split, participants);
 
-  // Equal slices, alternating the two brand colors. Every slice is the same
-  // size and weight — nothing marks one as better than another.
-  //
-  // Two colors cannot alternate around a ring with an ODD number of slices:
-  // the last slice wraps into the first and both land on blue. So for odd
-  // counts of 3+, the wrap-around slice takes deep-navy instead, which keeps
-  // every neighbour pair distinct. (n=1 has no neighbour, so it stays blue.)
-  const oddWrapIndex =
-    participants.length >= 3 && participants.length % 2 === 1
-      ? participants.length - 1
-      : -1;
+  // Equal slices, alternating the two wheel-only colors (--color-wheel-red /
+  // --color-wheel-blue — see globals.css) strictly by index parity: red,
+  // blue, red, blue, … regardless of participant count. Every slice is the
+  // same size and weight — nothing marks one as better than another. With an
+  // ODD slice count the last slice wraps around and lands on the same color
+  // as the first (e.g. 3 participants: red/blue/red) — accepted as-is, not
+  // worked around with a third color, since the white divider lines already
+  // keep every slice visually distinct regardless of color repetition.
   const gradient = `conic-gradient(${participants
     .map((_, i) => {
-      const color =
-        i === oddWrapIndex
-          ? "var(--color-deep-navy)"
-          : i % 2 === 0
-            ? "var(--color-brand-blue)"
-            : "var(--color-brand-red)";
+      const color = i % 2 === 0 ? "var(--color-wheel-red)" : "var(--color-wheel-blue)";
       return `${color} ${i * sliceDeg}deg ${(i + 1) * sliceDeg}deg`;
     })
     .join(", ")})`;
@@ -136,21 +128,46 @@ export function SpinToDecide({
 
       <div className="mt-4 flex flex-col items-center">
         <div className="relative flex h-[224px] w-[224px] items-center justify-center">
-          {/* Pointer — sits ON TOP of the wheel: larger, solid deep-navy, with
-              its own shadow so it never blends into the page behind it. */}
+          {/* Pointer — a rounded pin/teardrop instead of a flat CSS-border
+              triangle, for the same "cleaner, more polished" reason as the
+              rim below. Still solid deep-navy (no new hues) with a white
+              outline for edge definition and a soft blue gloss highlight for
+              dimensionality. Explicitly centered (left-1/2 + translate)
+              rather than relying on flex static-position placement, since an
+              SVG box isn't the zero-size point the old border-triangle was. */}
           <div
             aria-hidden
-            className="absolute -top-1 z-20 h-0 w-0 border-x-[11px] border-t-[18px] border-x-transparent border-t-deep-navy drop-shadow-md"
-          />
+            className="absolute -top-1.5 left-1/2 z-20 -translate-x-1/2 drop-shadow-md"
+          >
+            <svg width="26" height="32" viewBox="0 0 26 32" fill="none">
+              <path
+                d="M13 2c6.1 0 11 4.6 11 10.3 0 6.9-8.3 15.6-10.3 17.5a1 1 0 0 1-1.4 0C10.3 27.9 2 19.2 2 12.3 2 6.6 6.9 2 13 2Z"
+                fill="var(--color-deep-navy)"
+                stroke="#ffffff"
+                strokeWidth="1.5"
+              />
+              <ellipse cx="13" cy="11.5" rx="5.5" ry="6" fill="var(--color-brand-blue)" fillOpacity="0.5" />
+            </svg>
+          </div>
 
-          {/* The wheel. White outer ring + soft drop shadow lift it off the
-              page so it reads as an object rather than a flat pie chart. */}
+          {/* Static (non-rotating) rim, sitting behind the spinning disc: an
+              outer neutral "case" ring plus an inner white bezel, echoing
+              the reference's layered rim instead of the old single 3px
+              border. Also fixes a side-effect of the old approach: a
+              box-shadow on the ROTATING disc visibly swings around during
+              the spin — putting the shadow here keeps it fixed. */}
+          <div className="absolute h-[216px] w-[216px] rounded-full bg-neutral-200 shadow-[0_10px_24px_rgba(15,23,42,0.22)]" />
+          <div className="absolute h-[204px] w-[204px] rounded-full bg-white" />
+
+          {/* The wheel disc itself — unchanged mechanics, just no longer
+              needs its own border/shadow now that the rim above provides
+              both. */}
           <div
             onTransitionEnd={() => {
               setSpinning(false);
               setRevealed(true);
             }}
-            className="relative h-[196px] w-[196px] rounded-full border-[3px] border-white shadow-lg"
+            className="relative h-[194px] w-[194px] rounded-full"
             style={{
               background: gradient,
               transform: `rotate(${rotation}deg)`,
@@ -202,12 +219,29 @@ export function SpinToDecide({
           </div>
 
           {/* Center hub — deliberately OUTSIDE the rotating element so it
-              stays still while the wheel turns. Echoes the splash compass. */}
+              stays still while the wheel turns. Echoes the splash compass.
+              Bumped up from a flat navy fill to a subtle radial gradient
+              (still only the two existing navy/blue tokens — no new hue)
+              plus a brighter top-left highlight arc, for the same
+              glossy/embossed "real object" dimensionality as the rim above,
+              instead of reading as a flat dot. */}
           <div
             aria-hidden
-            className="absolute z-10 flex h-10 w-10 items-center justify-center rounded-full border-[3px] border-white bg-deep-navy shadow-md"
+            className="absolute z-10 flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-white shadow-[0_3px_8px_rgba(15,23,42,0.4)]"
+            style={{
+              background:
+                "radial-gradient(circle at 35% 30%, var(--color-nets-blue-700) 0%, var(--color-deep-navy) 70%)",
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+            <span
+              aria-hidden
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgb(255 255 255 / 0.3) 0%, transparent 45%)",
+              }}
+            />
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" className="relative">
               <path d="M10 3 L13 10 L10 8.6 Z" fill="var(--color-brand-red)" />
               <path d="M10 3 L7 10 L10 8.6 Z" fill="#ffffff" fillOpacity="0.9" />
               <path d="M10 17 L7 10 L10 11.4 Z" fill="var(--color-brand-blue)" />

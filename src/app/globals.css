@@ -43,13 +43,37 @@
      blue specifically it's moot, since brand-blue now IS accent.            */
   --color-brand-red: #ff1f3d; /* NETS Red  — gradient start, splash mark      */
   --color-brand-blue: var(--color-nets-blue-700); /* = --color-accent, consolidated */
-  --color-deep-navy: #0b1426; /* Deep Navy — full-screen splash background    */
+  --color-deep-navy: #0b1426; /* Deep Navy — shared dark bg: Splash's OLD (pre-
+     illustration) background, plus AuthForm's login/signup background and
+     SpinToDecide's wheel fill/gradient. Still used by both of those — do
+     not repoint this to match the splash illustration's navy, or their
+     colors shift too. See --color-splash-navy below for the illustration-
+     matched value, deliberately kept separate.                             */
+  --color-splash-navy: #081131; /* Splash background ONLY — hand-picked to exactly
+     match public/splash-illustration.png's flat navy (confirmed by sampling
+     the PNG) so the CSS fill behind it and the image itself read as one
+     continuous surface with no seam. Not a general-purpose token: nothing
+     else should reach for this over --color-deep-navy.                     */
 
   /* --- Brand: NETS red  (warnings / alerts / negative amounts ONLY) -------- */
   /* FINAL RULE: red is NEVER a button/CTA color. Blue is the only interactive/
      CTA color. Red only signals warnings, alerts, and negative amounts.        */
   --color-nets-red-900: #791f1f; /* negative amounts, strong warnings           */
   --color-nets-red-700: #a32d2d; /* alert emphasis, sparingly — not a CTA        */
+
+  /* --- Spin to Decide wheel segments (Split's SpinToDecide ONLY) ---------- */
+  /* Scoped exception, added on explicit request: the wheel's slices used to
+     alternate --color-brand-blue/--color-brand-red (the same blue used for
+     every CTA and the same saturated red used for the splash gradient) plus
+     a --color-deep-navy fallback on the odd-count wrap-around slice — three
+     colors doing a two-color job, and both were tuned for other contexts
+     (a button, a hero gradient), not a wheel. These two are for the pie
+     segments only: a deeper, muted brick/wine red distinct from every other
+     red in the app, and a medium blue visibly distinct from the navy center
+     hub/rim. Always exactly these two, alternating regardless of participant
+     count — do NOT reach for these outside the wheel's slices. */
+  --color-wheel-red: #b02332;
+  --color-wheel-blue: #3b5fc4;
 
   /* --- Reward tiers (Rewards -> Points "Your tier" card ONLY) ------------- */
   /* Scoped exception, added on explicit request/confirmation to give the
@@ -148,6 +172,16 @@
          text-danger / bg-danger          alert emphasis, sparingly (red-700)
          text-danger-strong               negative amounts, warnings (red-900)
 
+       Success (green) — a THIRD, deliberately scoped exception, added for
+       one purpose only: the completed/success moment of a payment or save
+       action (a checkmark badge + its confirmation line — TopUpForm,
+       PaymentSuccessCard, AutoTopupForm's "Saved.", BillCard/NewGoalForm's
+       success state). Reuses the existing --color-chart-green value (this
+       is not a new hex in the palette, just a new semantic name for one
+       already here) — NEVER used for buttons/CTAs (still always blue) and
+       never for anything but a genuine "this action just succeeded" beat:
+         text-success / bg-success        success checkmark + its message
+
      Do NOT paint whole cards/heroes blue. bg-hero is a single deliberate
      exception for the Home balance card, nothing else.
      ========================================================================== */
@@ -165,11 +199,19 @@
   --color-danger: var(--color-nets-red-700);
   --color-danger-strong: var(--color-nets-red-900);
 
+  --color-success: var(--color-chart-green);
+
   /* --- Scan & Pay intro animation ONLY (see AppShell/ScanPayIntro) -------- */
   /* Registers the two named `animate-*` utilities Tailwind v4 generates from
      --animate-*; matching @keyframes are defined below, outside @theme. */
   --animate-nfc-ping: nfc-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
   --animate-face-scan: face-scan 1.4s ease-in-out infinite;
+
+  /* --- Top-up intro animation ONLY (see TopUpForm's "intro" step) -------- */
+  /* One-shot (not infinite, unlike the two above) — plays once per visit to
+     the amount screen, not a looping decoration. */
+  --animate-topup-card-slide: topup-card-slide 1.8s cubic-bezier(0.4, 0, 0.2, 1) 1 both;
+  --animate-topup-connect-pulse: topup-connect-pulse 1.8s ease-out 1 both;
 }
 
 /* ----------------------------------------------------------------------------
@@ -182,6 +224,20 @@ body {
   background: var(--color-canvas);
   color: var(--color-ink);
   font-family: var(--font-sans);
+}
+
+/* Suppress the browser-native up/down spinner on every type="number" input,
+   app-wide — this app draws its own "$" prefix/affordances on these fields,
+   and the native spinner both looks inconsistent across browsers and
+   overlaps that layout. Global (not per-component) so it applies to every
+   current and future number input without needing to remember to opt in. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 /* Scan & Pay intro animation keyframes — see the --animate-* tokens above.
@@ -204,5 +260,37 @@ body {
   }
   50% {
     transform: translateY(90%);
+  }
+}
+
+/* Top-up intro animation keyframes — see the --animate-topup-* tokens above.
+   Scoped to that one intro step; nothing else references these. */
+@keyframes topup-card-slide {
+  0% {
+    transform: translateX(-56px);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes topup-connect-pulse {
+  0%,
+  70% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  85% {
+    transform: scale(1.4);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
   }
 }

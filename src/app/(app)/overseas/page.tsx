@@ -64,12 +64,12 @@ export default async function OverseasPage() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-ink">Miles work overseas too</p>
                 <p className="text-sm text-ink-muted">
-                  Same as at home: 100 pts = $1.00, up to 50% of a payment.
+                  Same as at home: 100 Miles = $1.00, up to 50% of a payment.
                 </p>
               </div>
             </div>
             <p className="mt-3 text-xs text-ink-muted">
-              You have {points.toLocaleString()} pts.
+              You have {points.toLocaleString()} Miles.
             </p>
           </Card>
 
@@ -109,7 +109,7 @@ export default async function OverseasPage() {
                     {milesCoverCents > 0 ? (
                       <p className="mt-1.5 text-xs text-ink-muted">
                         Miles could cover {formatMoney(milesCoverCents, currency)} of this (
-                        {pointsForCents(milesCoverCents).toLocaleString()} pts, max 50%)
+                        {pointsForCents(milesCoverCents).toLocaleString()} Miles, max 50%)
                       </p>
                     ) : null}
                   </Card>

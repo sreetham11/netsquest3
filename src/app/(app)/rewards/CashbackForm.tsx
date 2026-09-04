@@ -32,7 +32,7 @@ export function CashbackForm({
   return (
     <form action={formAction} className="mt-4 flex flex-col gap-3">
       <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-ink">Points to redeem</span>
+        <span className="text-sm font-medium text-ink">Miles to redeem</span>
         <input
           name="points"
           type="number"
@@ -45,8 +45,8 @@ export function CashbackForm({
         />
         <span className="text-xs text-ink-muted">
           {maxRedeemable > 0
-            ? `Up to ${maxRedeemable.toLocaleString()} pts available · ${pointsPerDollar} pts = $1.00`
-            : `Earn at least ${pointsPerDollar} pts to redeem cashback`}
+            ? `Up to ${maxRedeemable.toLocaleString()} Miles available · ${pointsPerDollar} Miles = $1.00`
+            : `Earn at least ${pointsPerDollar} Miles to redeem cashback`}
         </span>
       </label>
 
@@ -54,7 +54,7 @@ export function CashbackForm({
         <p className={`text-xs ${affordable ? "text-ink-muted" : "text-danger-strong"}`}>
           {affordable
             ? `Credits $${dollars.toFixed(2)} to your wallet balance`
-            : "You don't have enough points for that."}
+            : "You don't have enough Miles for that."}
         </p>
       ) : null}
 

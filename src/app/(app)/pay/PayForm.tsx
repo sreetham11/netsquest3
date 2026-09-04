@@ -1,31 +1,37 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { Card } from "@/components/ui/Card";
-import { Button, ButtonLink } from "@/components/ui/Button";
-import { Icon, type IconName } from "@/components/Icon";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/Icon";
+import { CompassMark } from "@/components/CompassMark";
+import { PaymentConfirmCard } from "@/components/payment/PaymentConfirmCard";
+import { PaymentSuccessCard } from "@/components/payment/PaymentSuccessCard";
 import { formatMoney } from "@/lib/format";
-import { BUDGET_CATEGORIES } from "@/lib/categoryIcon";
+import { randomTransactionRef } from "@/lib/payment";
+import { splitPrefillHref } from "@/lib/txn";
 import { makePayment } from "../actions";
 
-type Step = "choose" | "confirm" | "success";
+type Step = "qr" | "amount" | "confirm" | "success";
 
-// Fixed demo list, same "static demo catalogue" convention as MerchantDeal
-// elsewhere in this app — not real merchant/location data. Categories are
-// drawn from BUDGET_CATEGORIES (categoryIcon.ts's single source of truth)
-// so a payment here always lands in a category Budget/Top Spending
-// Categories already recognize, never an orphaned one-off string.
-const QUICK_MERCHANTS: Array<{ name: string; category: string; icon: IconName }> = [
-  { name: "Kopitiam", category: "Food", icon: "fast-food" },
-  { name: "FairPrice", category: "Groceries", icon: "grocery" },
-  { name: "Cheers", category: "Shopping", icon: "convenience" },
-  { name: "Starbucks", category: "Food", icon: "coffee" },
-];
+// Fixed demo merchant identity for the scan path — this app has no live
+// camera/QR reader, so "scanning" the branded demo code below always
+// resolves to this same merchant. "Simulate Scan" is the only way through
+// this screen — no manual-entry fallback (removed: a different, real
+// merchant name was never a thing this demo could actually verify).
+const DEFAULT_MERCHANT = "Merchant ABC";
 
-// "Overseas" is a cross-cutting derived bucket (see getMonthlySpendByCategory
-// — it's computed from Transaction.country, never written as a literal
-// category), so it doesn't belong as a pickable category for an in-person tap.
-const PAYABLE_CATEGORIES = BUDGET_CATEGORIES.filter((c) => c !== "Overseas");
+// No real category picker in this flow (the old merchant-tile grid carried
+// one implicitly via which tile you tapped) — a single fixed demo merchant
+// doesn't need one, so every scan-and-pay payment lands in the same
+// catch-all category, same default makePayment already falls back to.
+const DEFAULT_CATEGORY = "Shopping";
+
+// Encoded string for the demo QR — any simple payload works since nothing
+// ever decodes it for real; it just needs to look like a real merchant QR
+// would (a merchant identifier), not be functional.
+const DEMO_QR_VALUE = "netsquest://pay?merchant=demo-merchant-abc";
 
 // Uses useTransition + a direct action call (same pattern as TopUpForm and
 // AddContactForm) rather than useActionState — the success state needs to
@@ -33,53 +39,50 @@ const PAYABLE_CATEGORIES = BUDGET_CATEGORIES.filter((c) => c !== "Overseas");
 export function PayForm({
   balanceCents,
   currency,
+  fromSplit = false,
 }: {
   balanceCents: number;
   currency: string;
+  // True only when this Scan & Pay session was launched from Split's own
+  // button (see split/page.tsx's `?from=split` and pay/page.tsx) — gates the
+  // "Split this?" prompt on the success screen. The bottom nav's own entry
+  // point never sets this, so a normal payment stays exactly as before.
+  fromSplit?: boolean;
 }) {
-  const [step, setStep] = useState<Step>("choose");
-  const [merchant, setMerchant] = useState("");
-  const [category, setCategory] = useState(PAYABLE_CATEGORIES[0]);
+  const [step, setStep] = useState<Step>("qr");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ newBalanceCents: number; pointsEarned: number } | null>(
     null,
   );
+  const [successAt, setSuccessAt] = useState<Date | null>(null);
+  const [txnRef, setTxnRef] = useState("");
   const [pending, startTransition] = useTransition();
 
   const amountCents = Math.round((Number(amount) || 0) * 100);
-  const valid = Number.isFinite(amountCents) && amountCents > 0 && merchant.trim().length > 0;
+  const validAmount = Number.isFinite(amountCents) && amountCents > 0;
   const insufficient = amountCents > balanceCents;
 
-  function pickMerchant(m: (typeof QUICK_MERCHANTS)[number]) {
-    setMerchant(m.name);
-    setCategory(m.category);
+  function simulateScan() {
     setAmount("");
-    setStep("confirm");
-  }
-
-  function enterManually() {
-    setMerchant("");
-    setCategory(PAYABLE_CATEGORIES[0]);
-    setAmount("");
-    setStep("confirm");
+    setStep("amount");
   }
 
   function payAgain() {
-    setMerchant("");
-    setCategory(PAYABLE_CATEGORIES[0]);
     setAmount("");
     setError("");
     setResult(null);
-    setStep("choose");
+    setSuccessAt(null);
+    setTxnRef("");
+    setStep("qr");
   }
 
-  function submitPayment() {
-    if (!valid || insufficient) return;
+  function confirmPayment() {
+    if (!validAmount || insufficient) return;
     setError("");
     const formData = new FormData();
-    formData.append("merchant", merchant);
-    formData.append("category", category);
+    formData.append("merchant", DEFAULT_MERCHANT);
+    formData.append("category", DEFAULT_CATEGORY);
     formData.append("amount", amount);
 
     startTransition(async () => {
@@ -89,70 +92,52 @@ export function PayForm({
         return;
       }
       setResult({ newBalanceCents: state.newBalanceCents, pointsEarned: state.pointsEarned });
+      setSuccessAt(new Date());
+      setTxnRef(randomTransactionRef());
       setStep("success");
     });
   }
 
-  if (step === "success" && result) {
+  if (step === "success" && result && successAt) {
     return (
-      <Card className="flex flex-col items-center gap-4 py-8 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white">
-          <Icon name="check" size={22} />
-        </span>
-        <div>
-          <p className="text-lg font-bold text-ink">Payment successful</p>
-          <p className="mt-1 text-sm text-ink-muted">
-            New balance {formatMoney(result.newBalanceCents, currency)}
-            {result.pointsEarned > 0
-              ? ` · +${result.pointsEarned.toLocaleString()} pts earned`
-              : ""}
-          </p>
-        </div>
-        <div className="flex w-full gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={payAgain}
-            className="flex-1 justify-center"
-          >
-            Pay again
-          </Button>
-          <ButtonLink href="/home" className="flex-1 justify-center">
-            Done
-          </ButtonLink>
-        </div>
-      </Card>
+      <PaymentSuccessCard
+        merchant={DEFAULT_MERCHANT}
+        amountCents={amountCents}
+        currency={currency}
+        successAt={successAt}
+        txnRef={txnRef}
+        pointsEarned={result.pointsEarned}
+        onAgain={payAgain}
+        splitPromptHref={
+          fromSplit ? splitPrefillHref(DEFAULT_MERCHANT, amountCents, DEFAULT_CATEGORY) : undefined
+        }
+      />
     );
   }
 
   if (step === "confirm") {
     return (
+      <PaymentConfirmCard
+        payTo={DEFAULT_MERCHANT}
+        amountCents={amountCents}
+        balanceCents={balanceCents}
+        currency={currency}
+        pending={pending}
+        error={error}
+        onConfirm={confirmPayment}
+        onCancel={() => setStep("amount")}
+      />
+    );
+  }
+
+  if (step === "amount") {
+    return (
       <Card>
         <div className="flex flex-col gap-4">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-ink">Paying</span>
-            <input
-              value={merchant}
-              onChange={(e) => setMerchant(e.target.value)}
-              placeholder="Merchant name"
-              className="rounded-button border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-ink">Category</span>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="rounded-button border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            >
-              {PAYABLE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Pay to</p>
+            <p className="text-base font-semibold text-ink">{DEFAULT_MERCHANT}</p>
+          </div>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-ink">Amount</span>
@@ -164,6 +149,7 @@ export function PayForm({
                 type="number"
                 min="0.01"
                 step="0.01"
+                autoFocus
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
@@ -177,22 +163,24 @@ export function PayForm({
             ) : null}
           </label>
 
-          {error ? <p className="text-sm text-danger-strong">{error}</p> : null}
+          <div className="flex items-center justify-between rounded-button border border-line bg-surface-muted px-3 py-2 text-xs">
+            <span className="text-ink-muted">Pay using NETS Prepaid Card</span>
+            <span className="font-medium text-ink">{formatMoney(balanceCents, currency)}</span>
+          </div>
 
           <div className="flex gap-2">
             <Button
               type="button"
-              onClick={submitPayment}
-              disabled={!valid || insufficient || pending}
+              onClick={() => setStep("confirm")}
+              disabled={!validAmount || insufficient}
               className="flex-1 justify-center"
             >
-              {pending ? "Paying…" : "Pay"}
+              Submit
             </Button>
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setStep("choose")}
-              disabled={pending}
+              onClick={() => setStep("qr")}
               className="flex-1 justify-center"
             >
               Back
@@ -204,28 +192,28 @@ export function PayForm({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-ink-muted">Pick a merchant, or enter one manually.</p>
-      <div className="grid grid-cols-2 gap-3">
-        {QUICK_MERCHANTS.map((m) => (
-          <button
-            key={m.name}
-            type="button"
-            onClick={() => pickMerchant(m)}
-            className="flex flex-col items-center gap-2 rounded-button border border-line bg-surface px-4 py-5 text-sm font-medium text-ink hover:bg-surface-muted"
-          >
-            <Icon name={m.icon} size={22} className="text-accent" />
-            {m.name}
-          </button>
-        ))}
+    <div className="flex flex-col items-center gap-4">
+      <p className="text-center text-sm text-ink-muted">
+        Point your camera at a merchant&apos;s QR code to pay.
+      </p>
+
+      {/* Branded demo QR — our compass mark + wordmark, not a real bank/
+          fintech logo (no DBS/UOB/GrabPay etc., since we hold no real
+          certification with any of them). "Simulate Scan" stands in for an
+          actual camera scan, which this app doesn't have. */}
+      <div className="flex flex-col items-center gap-3 rounded-card border border-line bg-white p-6 shadow-sm">
+        <CompassMark size={36} />
+        <div className="rounded-lg border border-line p-3">
+          <QRCodeSVG value={DEMO_QR_VALUE} size={168} bgColor="#ffffff" fgColor="#0b1426" />
+        </div>
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+          Demo Merchant QR
+        </p>
       </div>
-      <Button
-        type="button"
-        variant="secondary"
-        onClick={enterManually}
-        className="w-full justify-center"
-      >
-        Enter manually
+
+      <Button type="button" onClick={simulateScan} className="w-full justify-center">
+        <Icon name="camera" size={16} />
+        Simulate Scan
       </Button>
     </div>
   );

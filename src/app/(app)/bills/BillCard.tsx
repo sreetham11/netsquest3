@@ -95,6 +95,16 @@ export function BillCard({
         </div>
       </div>
 
+      {/* One-time confirmation right after a successful submission — state
+          resets on next mount, so this isn't a persisted flag; the
+          permanent record is the "Paid $X on ..." line above. */}
+      {state?.ok ? (
+        <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-success">
+          <Icon name="check" size={14} />
+          Payment successful.
+        </p>
+      ) : null}
+
       {!paidThisMonth && !confirming ? (
         <Button
           type="button"
@@ -132,11 +142,11 @@ export function BillCard({
               <span className="block text-sm font-medium text-ink">Apply Miles</span>
               <span className="block text-xs text-ink-muted">
                 {canUseMiles
-                  ? `Use ${milesPointsCost.toLocaleString()} pts for ${formatMoney(
+                  ? `Use ${milesPointsCost.toLocaleString()} Miles for ${formatMoney(
                       milesDiscountCents,
                       currency,
                     )} off · max 50% of a payment`
-                  : `${pointsBalance.toLocaleString()} pts — not enough to discount this bill yet`}
+                  : `${pointsBalance.toLocaleString()} Miles — not enough to discount this bill yet`}
               </span>
             </span>
           </label>
@@ -151,7 +161,7 @@ export function BillCard({
 
           {state?.error ? <p className="mt-2 text-sm text-danger-strong">{state.error}</p> : null}
           <div className="mt-3 flex flex-col gap-2">
-            <Button type="submit" disabled={pending} className="w-full justify-center">
+            <Button type="submit" loading={pending} className="w-full justify-center">
               {pending ? "Paying…" : "Confirm payment"}
             </Button>
             <Button

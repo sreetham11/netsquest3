@@ -17,7 +17,11 @@ export default async function TopUpPage() {
   return (
     <div>
       <PageHeader title="Top up" subtitle="Add funds to your NETS Quest wallet." />
-      <TopUpForm balanceCents={account?.balanceCents ?? 0} currency={currency} />
+      <TopUpForm
+        balanceCents={account?.balanceCents ?? 0}
+        currency={currency}
+        accountId={account?.id ?? user.id}
+      />
     </div>
   );
 }
